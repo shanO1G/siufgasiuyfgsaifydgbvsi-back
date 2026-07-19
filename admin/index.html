@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard — College Dating App</title>
+  <!-- Google Fonts Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- 1. LOGIN & SIGNUP INTERFACE -->
+  <div id="login-container" class="login-wrapper">
+    <div class="login-card">
+      <!-- SIGN IN FORM -->
+      <div id="signin-section">
+        <div class="login-header">
+          <div class="logo-mark">A</div>
+          <h2>Admin Portal</h2>
+          <p>Three-factor authentication required</p>
+        </div>
+        <form id="login-form">
+          <div class="form-group">
+            <label for="login-email">Admin Email</label>
+            <input type="email" id="login-email" required placeholder="admin@domain.edu">
+          </div>
+          <div class="form-group">
+            <label for="login-password">Personal Password</label>
+            <input type="password" id="login-password" required placeholder="••••••••">
+          </div>
+          <div class="form-group">
+            <label for="login-common">Shared Common Password</label>
+            <input type="password" id="login-common" required placeholder="••••••••">
+          </div>
+          <div id="login-error" class="alert error hidden"></div>
+          <button type="submit" class="btn primary full-width">Sign In</button>
+        </form>
+        <p class="toggle-link-text" style="text-align: center; margin-top: 16px; font-size: 0.85rem; color: var(--text-secondary);">
+          First time? <a href="#" id="to-signup-link" style="color: var(--accent-color); font-weight: 500; text-decoration: none;">Register admin account</a>
+        </p>
+      </div>
+
+      <!-- SIGN UP FORM -->
+      <div id="signup-section" class="hidden">
+        <div class="login-header">
+          <div class="logo-mark">A</div>
+          <h2>Register Admin</h2>
+          <p>Email must be allowlisted in server configuration</p>
+        </div>
+        <form id="signup-form">
+          <div class="form-group">
+            <label for="signup-email">Admin Email</label>
+            <input type="email" id="signup-email" required placeholder="admin@domain.edu">
+          </div>
+          <div class="form-group">
+            <label for="signup-password">Choose Personal Password</label>
+            <input type="password" id="signup-password" required placeholder="••••••••">
+          </div>
+          <div id="signup-error" class="alert error hidden"></div>
+          <div id="signup-success" class="alert success hidden"></div>
+          <button type="submit" class="btn primary full-width">Register Account</button>
+        </form>
+        <p class="toggle-link-text" style="text-align: center; margin-top: 16px; font-size: 0.85rem; color: var(--text-secondary);">
+          Already registered? <a href="#" id="to-signin-link" style="color: var(--accent-color); font-weight: 500; text-decoration: none;">Sign in here</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. MAIN DASHBOARD INTERFACE -->
+  <div id="dashboard-container" class="dashboard-wrapper hidden">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-mark">A</div>
+        <div class="brand-info">
+          <h3>Admin Panel</h3>
+          <span id="admin-email-display">admin@domain.edu</span>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-tab="flags-tab">
+          <span class="icon">⚠️</span> Flags Queue
+        </button>
+        <button class="nav-item" data-tab="verifications-tab">
+          <span class="icon">🪪</span> Verification Queue
+        </button>
+        <button class="nav-item" data-tab="users-tab">
+          <span class="icon">👥</span> User Directory
+        </button>
+        <button class="nav-item" data-tab="reports-tab">
+          <span class="icon">🚩</span> Reports Logs
+        </button>
+        <button class="nav-item" data-tab="feedback-tab">
+          <span class="icon">💬</span> Feedback Logs
+        </button>
+        <button class="nav-item" data-tab="announce-tab">
+          <span class="icon">📢</span> System Announcement
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="logout-btn" class="btn secondary full-width">Logout</button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <header class="content-header">
+        <h1 id="tab-title">Flags Queue</h1>
+        <div id="connection-indicator" class="status-indicator">
+          <span class="dot connected"></span> Connected
+        </div>
+      </header>
+
+      <div class="scroll-container">
+        <!-- TAB: FLAGS QUEUE -->
+        <section id="flags-tab" class="tab-pane active">
+          <div class="tab-description">
+            <p>Action critical violations and automated behavioral velocity triggers.</p>
+          </div>
+          <div class="table-card">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>User / Email</th>
+                  <th>Flag Type</th>
+                  <th>Severity</th>
+                  <th>Details</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="flags-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+            <div id="flags-empty-state" class="empty-state hidden">
+              <span class="empty-icon">✓</span>
+              <p>Flags queue is currently empty.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: VERIFICATIONS -->
+        <section id="verifications-tab" class="tab-pane">
+          <div class="tab-description">
+            <p>Review camera-captured student identity documents alongside live face snapshots.</p>
+          </div>
+          <div id="verifications-grid" class="verifications-grid">
+            <!-- Populated dynamically -->
+          </div>
+          <div id="verifications-empty-state" class="empty-state hidden">
+            <span class="empty-icon">✓</span>
+            <p>No verification requests pending review.</p>
+          </div>
+        </section>
+
+        <!-- TAB: USER DIRECTORY -->
+        <section id="users-tab" class="tab-pane">
+          <div class="tab-description">
+            <p>Global directory of registered user profiles. Sorted by highest active flags count.</p>
+          </div>
+          <div class="table-card">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name / Username</th>
+                  <th>Email</th>
+                  <th>Identity</th>
+                  <th>Flags</th>
+                  <th>Premium</th>
+                  <th>Badges</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="users-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- TAB: REPORTS -->
+        <section id="reports-tab" class="tab-pane">
+          <div class="tab-description">
+            <p>Review reports logged by dating app members against users and posts.</p>
+          </div>
+          <div class="table-card">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Reporter</th>
+                  <th>Target User / Post</th>
+                  <th>Reason</th>
+                  <th>Submitted At</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="reports-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- TAB: FEEDBACK -->
+        <section id="feedback-tab" class="tab-pane">
+          <div class="tab-description">
+            <p>View general suggestions, issues, and inquiries submitted by app members.</p>
+          </div>
+          <div class="table-card">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Feedback Content</th>
+                  <th>Submitted At</th>
+                </tr>
+              </thead>
+              <tbody id="feedback-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- TAB: SYSTEM ANNOUNCEMENT -->
+        <section id="announce-tab" class="tab-pane">
+          <div class="tab-description">
+            <p>Publish a system-wide announcement broadcasted to all active dating profiles.</p>
+          </div>
+          <div class="card-form-wrapper">
+            <div class="card-form">
+              <form id="announcement-form">
+                <div class="form-group">
+                  <label for="announce-title">Announcement Title</label>
+                  <input type="text" id="announce-title" required placeholder="e.g. Scheduled Service Maintenance">
+                </div>
+                <div class="form-group">
+                  <label for="announce-content">Announcement Body</label>
+                  <textarea id="announce-content" rows="6" required placeholder="Describe the announcement details here..."></textarea>
+                </div>
+                <div id="announce-alert" class="alert hidden"></div>
+                <button type="submit" class="btn primary">Publish Announcement</button>
+              </form>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- REJECTION REASON MODAL -->
+  <div id="reject-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3>Reject Identity Verification</h3>
+      <p>Specify the reason for rejecting this verification request. This feedback will be displayed to the student.</p>
+      <form id="reject-form">
+        <input type="hidden" id="reject-request-id">
+        <div class="form-group">
+          <label for="reject-reason">Reason for Rejection</label>
+          <textarea id="reject-reason" required placeholder="e.g. ID card image is blurred, or face snapshot does not match the photo on the card."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="reject-modal-cancel" class="btn secondary">Cancel</button>
+          <button type="submit" class="btn primary danger">Confirm Rejection</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MANAGE BADGES & MODERATION MODAL -->
+  <div id="user-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3 id="user-modal-title">Edit Profile Moderation</h3>
+      <form id="user-modal-form">
+        <input type="hidden" id="user-modal-userid">
+        <div class="form-group">
+          <label for="user-modal-badges">Badges (comma-separated list)</label>
+          <input type="text" id="user-modal-badges" placeholder="e.g. verified-insider, top-profile">
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="user-modal-cancel" class="btn secondary">Cancel</button>
+          <button type="submit" class="btn primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+.env
+**/.env
+.agents
+node_modules
+**/node_modules
