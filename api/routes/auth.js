@@ -504,16 +504,6 @@ router.post('/forgot-password', async (req, res) => {
 // Serves a beautiful, mobile-friendly HTML form to reset the password directly in the browser.
 router.get('/reset-password', async (req, res) => {
   try {
-    const { email, token } = req.query;
-    if (!email || !token) {
-      return res.status(400).send(`
-        <div style="font-family: sans-serif; text-align: center; padding: 50px; color: #334155;">
-          <h2 style="color: #ef4444; margin-bottom: 12px;">Invalid Link</h2>
-          <p>The password reset link is invalid or incomplete. Please request a new link.</p>
-        </div>
-      `);
-    }
-
     res.send(`
 <!DOCTYPE html>
 <html lang="en">
@@ -654,10 +644,10 @@ router.get('/reset-password', async (req, res) => {
       
       <div id="error-alert" class="alert danger"></div>
 
-      <form id="reset-form">
+      <form id="reset-form" onsubmit="event.preventDefault(); return false;">
         <div class="form-group">
           <label>Email Address</label>
-          <input type="email" id="email-display" value="${email.replace(/"/g, '&quot;')}" disabled>
+          <input type="email" id="email-display" disabled>
         </div>
         <div class="form-group">
           <label for="new-password">New Password</label>
@@ -686,6 +676,19 @@ router.get('/reset-password', async (req, res) => {
     const errorAlert = document.getElementById('error-alert');
     const formContainer = document.getElementById('form-container');
     const successContainer = document.getElementById('success-container');
+    const emailDisplay = document.getElementById('email-display');
+
+    // Parse URL query parameters client-side
+    const urlParams = new URLSearchParams(window.location.search);
+    const email = urlParams.get('email');
+    const token = urlParams.get('token');
+
+    if (!email || !token) {
+      formContainer.style.display = 'none';
+      showError('The password reset link is invalid or incomplete. Please request a new link.');
+    } else {
+      emailDisplay.value = email;
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -694,6 +697,10 @@ router.get('/reset-password', async (req, res) => {
       const newPassword = document.getElementById('new-password').value;
       const confirmPassword = document.getElementById('confirm-password').value;
 
+      if (!email || !token) {
+        showError('Invalid reset session. Please request a new reset link.');
+        return;
+      }
       if (newPassword.length < 8) {
         showError('Password must be at least 8 characters long.');
         return;
@@ -711,15 +718,15 @@ router.get('/reset-password', async (req, res) => {
       submitBtn.innerText = 'Resetting...';
 
       try {
-        const response = await fetch('/api/auth/reset-password', {
+        const response = await fetch(window.location.pathname, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            email: "${email.replace(/"/g, '\\"')}",
-            token: "${token.replace(/"/g, '\\"')}",
-            newPassword
+            email: email,
+            token: token,
+            newPassword: newPassword
           })
         });
 
