@@ -238,11 +238,12 @@ Fetch the authenticated user's own full profile. Requires authentication cookie.
 
 Update the authenticated user's own profile. Requires authentication cookie.
 
-> Only the fields listed below can be updated. Fields like `email`, `username`, `password`, `banned`, `isPremium`, and `badges` are immutable through this endpoint.
+> Only the fields listed below can be updated. Fields like `email`, `password`, `banned`, `isPremium`, and `badges` are immutable through this endpoint.
 
 **Body (all fields optional — send only what you want to update):**
 ```json
 {
+  "username": "newusername",
   "name": "John Updated",
   "bio": "New bio text",
   "school": "Adamas University",

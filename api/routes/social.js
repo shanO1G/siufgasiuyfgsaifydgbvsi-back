@@ -45,9 +45,17 @@ router.get('/users/me', authRequired, async (req, res) => {
 // PUT /api/users/me
 router.put('/users/me', authRequired, async (req, res) => {
   try {
-    const { name, bio, school, course, height, hobbies, skills, lookingFor, sexualOrientation, tags, pictures } = req.body;
+    const { username, name, bio, school, course, height, hobbies, skills, lookingFor, sexualOrientation, tags, pictures } = req.body;
 
-    // Input length validation
+    // Input validation
+    if (username !== undefined) {
+      if (!validateStringLength(username, 50)) return res.status(400).json({ error: 'Username too long (max 50 chars)' });
+      const cleanUsername = username.toLowerCase().trim();
+      const exists = await User.findOne({ username: cleanUsername, _id: { $ne: req.user.id } });
+      if (exists) {
+        return res.status(400).json({ error: 'Username already taken' });
+      }
+    }
     if (name !== undefined) {
       if (!validateStringLength(name, 100)) return res.status(400).json({ error: 'Name too long (max 100 chars)' });
     }
@@ -77,8 +85,9 @@ router.put('/users/me', authRequired, async (req, res) => {
       }
     }
 
-    // Whitelist of updatable fields — never allow email, username, passwordHash, banned, etc.
+    // Whitelist of updatable fields — never allow email, passwordHash, banned, etc.
     const allowedUpdates = {};
+    if (username !== undefined) allowedUpdates.username = username.toLowerCase().trim();
     if (name !== undefined) allowedUpdates.name = name.trim();
     if (bio !== undefined) allowedUpdates.bio = bio.trim();
     if (school !== undefined) allowedUpdates.school = school.trim();
