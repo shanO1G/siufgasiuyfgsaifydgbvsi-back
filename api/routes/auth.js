@@ -32,25 +32,27 @@ async function sendOTPEmail(email, otp) {
   console.log(`==================================================\n`);
 
   const apiKey = process.env.EMAIL_API_KEY;
-  const fromEmail = process.env.EMAIL_FROM || 'noreply@stu.adamasuniversity.ac.in';
+  const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
 
   if (apiKey && !apiKey.startsWith('re_your_')) {
     try {
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: fromEmail,
-          to: email,
-          subject: 'Your College Dating App Verification Code',
-          html: `<p>Your verification code is <strong>${otp}</strong>. It will expire in 10 minutes.</p>`
-        })
+      const { Resend } = require('resend');
+      const resend = new Resend(apiKey);
+
+      const { data, error } = await resend.emails.send({
+        from: fromEmail,
+        to: [email],
+        subject: 'Your College Dating App Verification Code',
+        html: `<p>Your verification code is <strong>${otp}</strong>. It will expire in 10 minutes.</p>`
       });
+
+      if (error) {
+        console.error('[RESEND ERROR] Failed to send email:', error);
+      } else {
+        console.log('[RESEND SUCCESS] Email sent successfully:', data);
+      }
     } catch (err) {
-      console.error('Failed to send email via Resend API:', err.message);
+      console.error('[RESEND EXCEPTION] Failed to send email via Resend SDK:', err.message);
     }
   }
 }
