@@ -200,6 +200,54 @@ Clear the session cookie. Requires authentication cookie.
 
 ---
 
+#### POST `/api/auth/forgot-password`
+
+Send a verification reset OTP to the user's email. No login required.
+
+**Body:**
+```json
+{
+  "email": "student@stu.adamasuniversity.ac.in"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "If this email is registered, a verification code has been sent."
+}
+```
+
+> **Security Note:** To prevent email enumeration, this endpoint returns the same success response regardless of whether the email exists in the database.
+
+---
+
+#### POST `/api/auth/reset-password`
+
+Verify the reset OTP and generate a temporary password sent to their email. No login required.
+
+**Body:**
+```json
+{
+  "email": "student@stu.adamasuniversity.ac.in",
+  "otp": "123456"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "Your password has been reset successfully. A temporary password was sent to your email."
+}
+```
+
+> **Behavior**:
+> - Generates a secure, 10-character random hexadecimal temporary password, hashes it, and overwrites the user's current password.
+> - Dispatches the temporary password to their email using a clean HTML layout.
+> - Enforces a **maximum of 5 incorrect verification attempts** before the OTP code is locked/invalidated.
+
+---
+
 ### Own Profile (`/api/users`)
 
 #### GET `/api/users/me`

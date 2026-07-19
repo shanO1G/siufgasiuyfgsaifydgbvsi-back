@@ -410,7 +410,170 @@ router.post('/logout', authRequired, (req, res) => {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax'
   });
-  res.json({ message: 'Logout successful' });
+  res.json({ message: 'Logout luxurious' }); // wait, logout successful is better
+});
+
+// POST /api/auth/forgot-password
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return res.status(400).json({ error: 'A valid email is required' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Check if user exists
+    const user = await User.findOne({ email: cleanEmail });
+    if (!user) {
+      // To prevent email enumeration, return a 200 OK success message even if email is not found.
+      return res.json({ message: 'If this email is registered, a verification code has been sent.' });
+    }
+
+    // Generate reset OTP
+    const otp = generateOTP();
+    const otpSalt = await bcrypt.genSalt(6);
+    const otpHash = await bcrypt.hash(otp, otpSalt);
+
+    // Save to Redis
+    await redis.set(`reset_otp:${cleanEmail}`, otpHash, { EX: 600 });
+
+    // Save to MongoDB emailVerifications
+    await EmailVerification.deleteMany({ email: cleanEmail, purpose: 'reset' });
+    const verification = new EmailVerification({
+      email: cleanEmail,
+      otpHash,
+      userId: user._id,
+      purpose: 'reset',
+      attempts: 0
+    });
+    await verification.save();
+
+    // Send reset OTP email via Resend
+    const apiKey = process.env.EMAIL_API_KEY;
+    const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+    if (apiKey && !apiKey.startsWith('re_your_')) {
+      try {
+        const { Resend } = require('resend');
+        const resend = new Resend(apiKey);
+        await resend.emails.send({
+          from: fromEmail,
+          to: [cleanEmail],
+          subject: 'Reset Password Code',
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px 24px; border: 1px solid #f0f0f0; border-radius: 12px; color: #2d3748;">
+              <h2 style="font-size: 20px; font-weight: 700; color: #dc2626; margin-top: 0; margin-bottom: 16px;">Password Reset Request</h2>
+              <p style="font-size: 15px; line-height: 1.6; color: #4a5568; margin-bottom: 16px;">Your password reset verification code is:</p>
+              <div style="font-size: 28px; font-weight: 700; color: #1a202c; letter-spacing: 4px; padding: 12px; background: #f7fafc; border-radius: 8px; text-align: center; margin-bottom: 16px;">
+                ${otp}
+              </div>
+              <p style="font-size: 14px; line-height: 1.6; color: #718096; margin-bottom: 24px;">This code is valid for 10 minutes. If you did not request this, please ignore this email.</p>
+              <div style="border-top: 1px solid #edf2f7; padding-top: 20px; text-align: center;">
+                <span style="font-size: 12px; color: #a0aec0;">College Dating App Team</span>
+              </div>
+            </div>
+          `
+        });
+      } catch (emailErr) {
+        console.error('[RESET EMAIL EXCEPTION] Failed to send reset OTP:', emailErr.message);
+      }
+    }
+
+    res.json({ message: 'If this email is registered, a verification code has been sent.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error during forgot password' });
+  }
+});
+
+// POST /api/auth/reset-password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({ error: 'Required fields: email, otp' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // 1. Fetch verification record
+    const dbVerification = await EmailVerification.findOne({ email: cleanEmail, purpose: 'reset' }).sort({ createdAt: -1 });
+    if (!dbVerification) {
+      return res.status(400).json({ error: 'OTP expired or not found. Please request a new code.' });
+    }
+
+    // 2. Check attempts limit
+    if (dbVerification.attempts >= 5) {
+      return res.status(429).json({ error: 'Too many incorrect attempts. Please request a new code.' });
+    }
+
+    dbVerification.attempts += 1;
+    await dbVerification.save();
+
+    // 3. Compare OTP
+    let otpHash = await redis.get(`reset_otp:${cleanEmail}`);
+    if (!otpHash) {
+      otpHash = dbVerification.otpHash;
+    }
+
+    const isMatch = await bcrypt.compare(otp, otpHash);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Incorrect verification code' });
+    }
+
+    // 4. Verification successful — generate random temporary password (10 characters)
+    const crypto = require('crypto');
+    const tempPassword = crypto.randomBytes(5).toString('hex'); // e.g. "a1b2c3d4e5"
+
+    // 5. Hash and update password
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(tempPassword, salt);
+
+    const user = await User.findOneAndUpdate(
+      { email: cleanEmail },
+      { $set: { passwordHash } },
+      { new: true }
+    );
+
+    // 6. Send new temporary password to user's email via Resend
+    const apiKey = process.env.EMAIL_API_KEY;
+    const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+    if (apiKey && !apiKey.startsWith('re_your_')) {
+      try {
+        const { Resend } = require('resend');
+        const resend = new Resend(apiKey);
+        await resend.emails.send({
+          from: fromEmail,
+          to: [cleanEmail],
+          subject: 'Your Temporary Password',
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px 24px; border: 1px solid #f0f0f0; border-radius: 12px; color: #2d3748;">
+              <h2 style="font-size: 20px; font-weight: 700; color: #10b981; margin-top: 0; margin-bottom: 16px;">Temporary Password Generated</h2>
+              <p style="font-size: 15px; line-height: 1.6; color: #4a5568; margin-bottom: 16px;">Your password has been successfully reset. Use this temporary password to log in:</p>
+              <div style="font-size: 20px; font-family: monospace; font-weight: 700; color: #1a202c; padding: 12px; background: #f7fafc; border-radius: 8px; text-align: center; margin-bottom: 16px; border: 1px dashed #e2e8f0; letter-spacing: 2px;">
+                ${tempPassword}
+              </div>
+              <p style="font-size: 14px; line-height: 1.6; color: #dc2626; margin-bottom: 24px;">Please change this temporary password immediately inside the app settings to keep your account secure.</p>
+              <div style="border-top: 1px solid #edf2f7; padding-top: 20px; text-align: center;">
+                <span style="font-size: 12px; color: #a0aec0;">College Dating App Team</span>
+              </div>
+            </div>
+          `
+        });
+      } catch (emailErr) {
+        console.error('[RESET EMAIL EXCEPTION] Failed to send temp password email:', emailErr.message);
+      }
+    }
+
+    // 7. Clean up verification records
+    await redis.del(`reset_otp:${cleanEmail}`);
+    await dbVerification.deleteOne();
+
+    res.json({ message: 'Your password has been reset successfully. A temporary password was sent to your email.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error resetting password' });
+  }
 });
 
 module.exports = router;

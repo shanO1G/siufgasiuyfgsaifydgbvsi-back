@@ -17,7 +17,7 @@ const emailVerificationSchema = new mongoose.Schema({
   },
   purpose: {
     type: String,
-    enum: ['signup', 'reverify'],
+    enum: ['signup', 'reverify', 'reset'],
     required: true
   },
   attempts: {
