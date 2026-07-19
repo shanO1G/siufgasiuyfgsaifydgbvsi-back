@@ -43,18 +43,23 @@ app.use('/uploads', (req, res, next) => {
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
+  // Resolve self-origin to allow same-origin requests from backend-hosted HTML pages
+  const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+  const host = req.get('host');
+  const selfOrigin = `${protocol}://${host}`;
+
   if (req.path.startsWith('/api/admin')) {
-    // Admin routes: only allow the configured admin SPA origin
-    if (origin === ADMIN_PANEL_ORIGIN) {
-      res.setHeader('Access-Control-Allow-Origin', ADMIN_PANEL_ORIGIN);
+    // Admin routes: only allow the configured admin SPA origin or self-origin
+    if (origin === ADMIN_PANEL_ORIGIN || origin === selfOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
     } else if (origin) {
       return res.status(403).json({ error: 'CORS policy: admin routes restricted' });
     }
     // No origin header (server-to-server / curl) — fall through without CORS headers
   } else {
-    // Regular app routes: only allow explicitly whitelisted origins
-    if (origin && APP_ORIGINS.includes(origin)) {
+    // Regular app routes: only allow explicitly whitelisted origins or self-origin
+    if (origin && (APP_ORIGINS.includes(origin) || origin === selfOrigin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
     } else if (origin) {
