@@ -24,7 +24,8 @@ const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'super-secret-jwt-key-change-in-produ
 const app = express();
 const server = http.createServer(app);
 
-const CHAT_PORT = process.env.CHAT_PORT || 5001;
+// Render injects PORT and scans for it. CHAT_PORT is for local multi-service dev only.
+const CHAT_PORT = process.env.PORT || process.env.CHAT_PORT || 5001;
 
 // Allowed origins for the main dating app (comma-separated list in env)
 const APP_ORIGINS = (process.env.APP_ORIGINS || 'http://localhost:3000,http://localhost:5173')
