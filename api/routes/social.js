@@ -638,11 +638,10 @@ router.post('/waitlist', async (req, res) => {
       language,
       platform,
       screenResolution,
-      timeZone,
-      cpuCores,
-      deviceMemory,
-      connectionType,
-      referrer
+      referrer,
+      country,
+      region,
+      city
     } = req.body;
 
     const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip || '127.0.0.1';
@@ -670,6 +669,9 @@ router.post('/waitlist', async (req, res) => {
       }
     }
 
+    // Fallback detection for country using Render/Cloudflare geo headers
+    const detectedCountry = country || req.headers['cf-ipcountry'] || req.headers['x-appengine-country'] || undefined;
+
     // 3. Save entry
     const entry = new Waitlist({
       ip,
@@ -678,11 +680,10 @@ router.post('/waitlist', async (req, res) => {
       language,
       platform,
       screenResolution,
-      timeZone,
-      cpuCores: cpuCores ? parseInt(cpuCores, 10) : undefined,
-      deviceMemory: deviceMemory ? parseInt(deviceMemory, 10) : undefined,
-      connectionType,
-      referrer
+      referrer,
+      country: detectedCountry,
+      region,
+      city
     });
     await entry.save();
 

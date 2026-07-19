@@ -514,6 +514,14 @@ async function fetchWaitlist() {
 
   data.entries.forEach(entry => {
     const tr = document.createElement('tr');
+    
+    // Format location nicely
+    const locationParts = [];
+    if (entry.city) locationParts.push(entry.city.trim());
+    if (entry.region) locationParts.push(entry.region.trim());
+    if (entry.country) locationParts.push(entry.country.trim());
+    const locationStr = locationParts.join(', ') || '<span class="text-secondary">Unknown</span>';
+
     tr.innerHTML = `
       <td><strong>${entry.ip}</strong></td>
       <td>${entry.email || '<span class="text-secondary">None</span>'}</td>
@@ -528,22 +536,20 @@ async function fetchWaitlist() {
       <td>
         <span style="font-size: 0.85rem;">
           <strong>Lang:</strong> ${entry.language || 'N/A'}<br>
-          <strong>TZ:</strong> ${entry.timeZone || 'N/A'}
+          <strong>Res:</strong> ${entry.screenResolution || 'N/A'}
         </span>
       </td>
       <td>
-        <span style="font-size: 0.85rem;">
-          <strong>CPU:</strong> ${entry.cpuCores ? entry.cpuCores + ' cores' : 'N/A'}<br>
-          <strong>RAM:</strong> ${entry.deviceMemory ? entry.deviceMemory + ' GB' : 'N/A'}
+        <span class="text-secondary" style="font-size: 0.85rem; max-width: 150px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${entry.referrer || ''}">
+          ${entry.referrer || 'Direct'}
         </span>
       </td>
       <td>
-        <span style="font-size: 0.85rem;">
-          <strong>Net:</strong> ${entry.connectionType || 'Unknown'}<br>
-          <strong>Ref:</strong> <span class="text-secondary" style="font-size: 0.75rem; max-width: 120px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${entry.referrer || ''}">${entry.referrer || 'Direct'}</span>
+        <span style="font-size: 0.85rem; font-weight: 500; color: #a5b4fc;">
+          ${locationStr}
         </span>
       </td>
-      <td>${new Date(entry.joinedAt).toLocaleString()}</td>
+      <td>${new Date(entry.createdAt || entry.joinedAt).toLocaleString()}</td>
     `;
     tbody.appendChild(tr);
   });

@@ -678,11 +678,10 @@ Sign up for the app's waitlist. Captures unique client IP and optional device fi
   "language": "en-US",
   "platform": "MacIntel",
   "screenResolution": "1920x1080",
-  "timeZone": "America/New_York",
-  "cpuCores": 8,
-  "deviceMemory": 16,
-  "connectionType": "wifi",
-  "referrer": "https://google.com"
+  "referrer": "https://google.com",
+  "country": "India",
+  "region": "West Bengal",
+  "city": "Kolkata"
 }
 ```
 
