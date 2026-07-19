@@ -15,7 +15,7 @@ const COLLEGE_EMAIL_REGEX = /@stu\.adamasuniversity\.ac\.in$/i;
 const OTP_ATTEMPTS_LIMIT = 5;
 const BRUTE_FORCE_THRESHOLD = 5;
 const BRUTE_FORCE_WINDOW_SECONDS = 900; // 15 min
-const OTP_RESEND_COOLDOWN_SECONDS = 60;
+const OTP_RESEND_COOLDOWN_SECONDS = 120; // 2 minutes cooldown
 const OTP_TTL_SECONDS = 600; // 10 min
 const SIGNUP_CLUSTER_THRESHOLD = 5;
 const SIGNUP_CLUSTER_WINDOW_SECONDS = 3600;
@@ -62,6 +62,7 @@ function validateStringLength(value, maxLength) {
   return typeof value === 'string' && value.length <= maxLength;
 }
 
+// POST /api/auth/signup
 router.post('/signup', async (req, res) => {
   try {
     const { email, username, password, name, age, gender, lookingFor, bio } = req.body;
@@ -70,6 +71,8 @@ router.post('/signup', async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ error: 'Required fields: email, password' });
     }
+
+    const cleanEmail = email.toLowerCase().trim();
 
     // 2. Input length caps & password rules
     if (!validateStringLength(password, 128)) return res.status(400).json({ error: 'Password too long (max 128 chars)' });
@@ -82,7 +85,7 @@ router.post('/signup', async (req, res) => {
     // 3. Generate or sanitise username
     let finalUsername = username ? username.toLowerCase().trim() : '';
     if (!finalUsername) {
-      const prefix = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_.]/g, '');
+      const prefix = cleanEmail.split('@')[0].replace(/[^a-z0-9_.]/g, '');
       finalUsername = prefix || 'user';
       let exists = await User.exists({ username: finalUsername });
       while (exists) {
@@ -103,7 +106,7 @@ router.post('/signup', async (req, res) => {
     }
 
     // 5. Check if user already exists
-    const existingEmail = await User.findOne({ email: email.toLowerCase() });
+    const existingEmail = await User.findOne({ email: cleanEmail });
     if (existingEmail) {
       return res.status(400).json({ error: 'Email already registered' });
     }
@@ -125,7 +128,7 @@ router.post('/signup', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, salt);
 
     const user = new User({
-      email: email.toLowerCase().trim(),
+      email: cleanEmail,
       username: finalUsername,
       name: finalName,
       age: finalAge,
@@ -153,21 +156,21 @@ router.post('/signup', async (req, res) => {
     }
 
     // 8. OTP generation if college email matched
-    const isCollegeEmail = COLLEGE_EMAIL_REGEX.test(email);
+    const isCollegeEmail = COLLEGE_EMAIL_REGEX.test(cleanEmail);
     if (isCollegeEmail) {
       const otp = generateOTP();
       const otpSalt = await bcrypt.genSalt(6);
       const otpHash = await bcrypt.hash(otp, otpSalt);
 
       // Delete any existing verification records for this email
-      await EmailVerification.deleteMany({ email: user.email });
+      await EmailVerification.deleteMany({ email: cleanEmail });
 
       // Save hashed OTP to Redis
-      await redis.set(`otp:${user.email}`, otpHash, { EX: OTP_TTL_SECONDS });
+      await redis.set(`otp:${cleanEmail}`, otpHash, { EX: OTP_TTL_SECONDS });
 
       // Save to MongoDB emailVerifications
       const verification = new EmailVerification({
-        email: user.email,
+        email: cleanEmail,
         otpHash,
         userId: user._id,
         purpose: 'signup',
@@ -175,7 +178,7 @@ router.post('/signup', async (req, res) => {
       });
       await verification.save();
 
-      await sendOTPEmail(user.email, otp);
+      await sendOTPEmail(cleanEmail, otp);
     }
 
     // 9. Generate token & login user automatically upon signup
@@ -262,6 +265,7 @@ router.post('/verify-otp', authRequired, async (req, res) => {
 
     // 7. Clean up verification records
     await redis.del(`otp:${user.email}`);
+    await redis.del(`otp_resend_count:${user.email}`);
     await dbVerification.deleteOne();
 
     res.json({ message: 'Email verified successfully', emailVerified: true });
@@ -287,11 +291,18 @@ router.post('/resend-otp', authRequired, async (req, res) => {
       return res.status(400).json({ error: 'Email is already verified' });
     }
 
-    // Rate limit: check if user requested OTP in last 60 seconds
+    // 1. Rate limit: check if user requested OTP in last 2 minutes
     const rateLimitKey = `otp_ratelimit:${user.email}`;
     const recentRequest = await redis.get(rateLimitKey);
     if (recentRequest) {
-      return res.status(429).json({ error: 'Please wait 60 seconds before requesting another code' });
+      return res.status(429).json({ error: 'Please wait 2 minutes before requesting another code' });
+    }
+
+    // 2. Limit: check if user exceeded 3 resends total
+    const resendCountKey = `otp_resend_count:${user.email}`;
+    const resendCount = await redis.get(resendCountKey);
+    if (resendCount && parseInt(resendCount, 10) >= 3) {
+      return res.status(429).json({ error: 'Maximum of 3 OTP resends reached. Please try again later.' });
     }
 
     // Generate new OTP
@@ -303,6 +314,10 @@ router.post('/resend-otp', authRequired, async (req, res) => {
     await redis.set(`otp:${user.email}`, otpHash, { EX: OTP_TTL_SECONDS });
     // Set rate limit tracker
     await redis.set(rateLimitKey, '1', { EX: OTP_RESEND_COOLDOWN_SECONDS });
+    
+    // Increment resend counter
+    const nextCount = resendCount ? parseInt(resendCount, 10) + 1 : 1;
+    await redis.set(resendCountKey, String(nextCount), { EX: 3600 }); // expire counter in 1 hour
 
     // Replace Mongo record with fresh one (reset attempts)
     await EmailVerification.deleteMany({ email: user.email });

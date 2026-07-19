@@ -147,14 +147,15 @@ Confirm the email OTP sent at signup. Requires authentication cookie.
 
 #### POST `/api/auth/resend-otp`
 
-Request a fresh OTP. Requires authentication cookie.
+Request a fresh OTP. Requires authentication cookie or Bearer token.
 
 **Response (200 OK):**
 ```json
 { "message": "Verification code sent successfully" }
 ```
 
-- Rate-limited to **1 request per 60 seconds**.
+- Rate-limited: Cooldown of **2 minutes (120 seconds)** between requests.
+- Limit: Maximum of **3 OTP resends** allowed per verification session.
 
 ---
 
