@@ -245,6 +245,7 @@ Update the authenticated user's own profile. Requires authentication cookie.
 {
   "username": "newusername",
   "name": "John Updated",
+  "age": 21,
   "bio": "New bio text",
   "school": "Adamas University",
   "course": "CSE",

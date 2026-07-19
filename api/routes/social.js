@@ -45,7 +45,7 @@ router.get('/users/me', authRequired, async (req, res) => {
 // PUT /api/users/me
 router.put('/users/me', authRequired, async (req, res) => {
   try {
-    const { username, name, bio, school, course, height, hobbies, skills, lookingFor, sexualOrientation, tags, pictures } = req.body;
+    const { username, name, age, bio, school, course, height, hobbies, skills, lookingFor, sexualOrientation, tags, pictures } = req.body;
 
     // Input validation
     if (username !== undefined) {
@@ -58,6 +58,12 @@ router.put('/users/me', authRequired, async (req, res) => {
     }
     if (name !== undefined) {
       if (!validateStringLength(name, 100)) return res.status(400).json({ error: 'Name too long (max 100 chars)' });
+    }
+    if (age !== undefined && age !== null && age !== '') {
+      const finalAge = parseInt(age, 10);
+      if (isNaN(finalAge) || finalAge < 18) {
+        return res.status(400).json({ error: 'You must be at least 18 years old' });
+      }
     }
     if (bio !== undefined) {
       if (!validateStringLength(bio, 500)) return res.status(400).json({ error: 'Bio too long (max 500 chars)' });
@@ -89,6 +95,7 @@ router.put('/users/me', authRequired, async (req, res) => {
     const allowedUpdates = {};
     if (username !== undefined) allowedUpdates.username = username.toLowerCase().trim();
     if (name !== undefined) allowedUpdates.name = name.trim();
+    if (age !== undefined && age !== null && age !== '') allowedUpdates.age = parseInt(age, 10);
     if (bio !== undefined) allowedUpdates.bio = bio.trim();
     if (school !== undefined) allowedUpdates.school = school.trim();
     if (course !== undefined) allowedUpdates.course = course.trim();
