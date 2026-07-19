@@ -654,6 +654,36 @@ router.post('/waitlist', async (req, res) => {
     });
     await entry.save();
 
+    // Send confirmation email via Resend
+    const apiKey = process.env.EMAIL_API_KEY;
+    const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+    if (apiKey && !apiKey.startsWith('re_your_')) {
+      try {
+        const { Resend } = require('resend');
+        const resend = new Resend(apiKey);
+        
+        const recipientName = name ? name.trim() : 'there';
+        await resend.emails.send({
+          from: fromEmail,
+          to: [cleanEmail],
+          subject: 'You are on the Waitlist! 🎉',
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px 24px; border: 1px solid #f0f0f0; border-radius: 12px; color: #2d3748;">
+              <h2 style="font-size: 22px; font-weight: 700; color: #6366f1; margin-top: 0; margin-bottom: 16px;">You're on the list! 🎉</h2>
+              <p style="font-size: 16px; line-height: 1.6; color: #4a5568; margin-bottom: 12px;">Hi ${recipientName},</p>
+              <p style="font-size: 16px; line-height: 1.6; color: #4a5568; margin-bottom: 16px;">Thanks for signing up! You have successfully joined the waitlist for the College Dating App.</p>
+              <p style="font-size: 16px; line-height: 1.6; color: #4a5568; margin-bottom: 24px;">We're currently polishing the app to make campus dating and friendship discovery safe, secure, and fun. We will drop you an email the second early access opens for your campus!</p>
+              <div style="border-top: 1px solid #edf2f7; padding-top: 20px; text-align: center;">
+                <span style="font-size: 13px; color: #a0aec0; font-weight: 500;">College Dating App Team</span>
+              </div>
+            </div>
+          `
+        });
+      } catch (emailErr) {
+        console.error('[WAITLIST EMAIL EXCEPTION] Failed to send confirmation email:', emailErr.message);
+      }
+    }
+
     res.status(201).json({ message: 'Successfully joined the waitlist!' });
   } catch (err) {
     console.error(err);

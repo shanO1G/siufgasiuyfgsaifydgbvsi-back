@@ -624,7 +624,7 @@ Sign up for the app's waitlist. No authentication required.
 ```json
 {
   "email": "prospective@gmail.com",
-  "name": "Jane Doe"
+  "name": "Jane Doe" // Optional
 }
 ```
 
@@ -634,6 +634,8 @@ Sign up for the app's waitlist. No authentication required.
   "message": "Successfully joined the waitlist!"
 }
 ```
+
+> **Note:** A successful sign-up automatically triggers a personalized welcome email confirmation sent via the Resend SDK.
 
 ---
 
