@@ -203,7 +203,7 @@ Clear the session cookie. Requires authentication cookie.
 
 #### POST `/api/auth/forgot-password`
 
-Send a verification reset OTP to the user's email. No login required.
+Send a password reset link to the user's email. No login required.
 
 **Body:**
 ```json
@@ -215,7 +215,7 @@ Send a verification reset OTP to the user's email. No login required.
 **Response (200 OK):**
 ```json
 {
-  "message": "If this email is registered, a verification code has been sent."
+  "message": "If this email is registered, a password reset link has been sent."
 }
 ```
 
@@ -225,27 +225,28 @@ Send a verification reset OTP to the user's email. No login required.
 
 #### POST `/api/auth/reset-password`
 
-Verify the reset OTP and generate a temporary password sent to their email. No login required.
+Confirm token and reset password directly. No login required.
 
 **Body:**
 ```json
 {
   "email": "student@stu.adamasuniversity.ac.in",
-  "otp": "123456"
+  "token": "4a1b2c3d4e5f...",
+  "newPassword": "myNewSecurePassword123"
 }
 ```
 
 **Response (200 OK):**
 ```json
 {
-  "message": "Your password has been reset successfully. A temporary password was sent to your email."
+  "message": "Your password has been reset successfully. You can now log in."
 }
 ```
 
 > **Behavior**:
-> - Generates a secure, 10-character random hexadecimal temporary password, hashes it, and overwrites the user's current password.
-> - Dispatches the temporary password to their email using a clean HTML layout.
-> - Enforces a **maximum of 5 incorrect verification attempts** before the OTP code is locked/invalidated.
+> - Validates that the token exists, matches, and has not expired (**10 minutes expiration window**).
+> - Updates the user's password directly with `newPassword`.
+> - Enforces standard user password rules (8–128 characters).
 
 ---
 
