@@ -515,8 +515,34 @@ async function fetchWaitlist() {
   data.entries.forEach(entry => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${entry.email}</td>
-      <td>${entry.name || 'Not set'}</td>
+      <td><strong>${entry.ip}</strong></td>
+      <td>${entry.email || '<span class="text-secondary">None</span>'}</td>
+      <td>
+        <span style="font-size: 0.85rem;">
+          <strong>Platform:</strong> ${entry.platform || 'Unknown'}<br>
+          <span class="text-secondary" style="font-size: 0.75rem; display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${entry.userAgent || ''}">
+            ${entry.userAgent || 'N/A'}
+          </span>
+        </span>
+      </td>
+      <td>
+        <span style="font-size: 0.85rem;">
+          <strong>Lang:</strong> ${entry.language || 'N/A'}<br>
+          <strong>TZ:</strong> ${entry.timeZone || 'N/A'}
+        </span>
+      </td>
+      <td>
+        <span style="font-size: 0.85rem;">
+          <strong>CPU:</strong> ${entry.cpuCores ? entry.cpuCores + ' cores' : 'N/A'}<br>
+          <strong>RAM:</strong> ${entry.deviceMemory ? entry.deviceMemory + ' GB' : 'N/A'}
+        </span>
+      </td>
+      <td>
+        <span style="font-size: 0.85rem;">
+          <strong>Net:</strong> ${entry.connectionType || 'Unknown'}<br>
+          <strong>Ref:</strong> <span class="text-secondary" style="font-size: 0.75rem; max-width: 120px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${entry.referrer || ''}">${entry.referrer || 'Direct'}</span>
+        </span>
+      </td>
       <td>${new Date(entry.joinedAt).toLocaleString()}</td>
     `;
     tbody.appendChild(tr);

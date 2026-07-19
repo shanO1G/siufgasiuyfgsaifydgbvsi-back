@@ -1,22 +1,29 @@
 const mongoose = require('mongoose');
 
-const waitlistSchema = new mongoose.Schema({
-  email: {
+const WaitlistIPSchema = new mongoose.Schema({
+  ip: {
     type: String,
     required: true,
     unique: true,
+  },
+  email: {
+    type: String,
     trim: true,
     lowercase: true
   },
-  name: {
-    type: String,
-    trim: true
-  },
-  joinedAt: {
+  userAgent: { type: String },
+  language: { type: String },
+  platform: { type: String },
+  screenResolution: { type: String },
+  timeZone: { type: String },
+  cpuCores: { type: Number },
+  deviceMemory: { type: Number },
+  connectionType: { type: String },
+  referrer: { type: String },
+  createdAt: {
     type: Date,
     default: Date.now,
-    required: true
-  }
+  },
 });
 
-module.exports = mongoose.model('Waitlist', waitlistSchema);
+module.exports = mongoose.models.WaitlistIP || mongoose.model("WaitlistIP", WaitlistIPSchema);

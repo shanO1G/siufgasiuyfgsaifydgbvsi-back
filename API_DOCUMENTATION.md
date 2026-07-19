@@ -668,13 +668,21 @@ List system announcements for regular users. Requires authentication cookie or B
 
 #### POST `/api/waitlist`
 
-Sign up for the app's waitlist. No authentication required.
+Sign up for the app's waitlist. Captures unique client IP and optional device fingerprint parameters. No authentication required.
 
-**Body:**
+**Body (All optional, email triggers confirmation message):**
 ```json
 {
   "email": "prospective@gmail.com",
-  "name": "Jane Doe" // Optional
+  "userAgent": "Mozilla/5.0 ...",
+  "language": "en-US",
+  "platform": "MacIntel",
+  "screenResolution": "1920x1080",
+  "timeZone": "America/New_York",
+  "cpuCores": 8,
+  "deviceMemory": 16,
+  "connectionType": "wifi",
+  "referrer": "https://google.com"
 }
 ```
 
@@ -685,7 +693,7 @@ Sign up for the app's waitlist. No authentication required.
 }
 ```
 
-> **Note:** A successful sign-up automatically triggers a personalized welcome email confirmation sent via the Resend SDK.
+> **Note:** A successful sign-up automatically triggers a welcome email confirmation sent via the Resend SDK if `email` is supplied. Limit of **one sign-up per client IP address** is enforced.
 
 ---
 

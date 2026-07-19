@@ -629,58 +629,91 @@ router.get('/announcements', authRequired, async (req, res) => {
   }
 });
 
-// POST /api/waitlist (Public waitlist sign-up)
+// POST /api/waitlist (Public waitlist sign-up with client IP & fingerprinting)
 router.post('/waitlist', async (req, res) => {
   try {
-    const { email, name } = req.body;
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
-      return res.status(400).json({ error: 'A valid email is required' });
-    }
-    if (name && !validateStringLength(name, 100)) {
-      return res.status(400).json({ error: 'Name is too long (max 100 chars)' });
-    }
+    const {
+      email,
+      userAgent,
+      language,
+      platform,
+      screenResolution,
+      timeZone,
+      cpuCores,
+      deviceMemory,
+      connectionType,
+      referrer
+    } = req.body;
 
-    const cleanEmail = email.trim().toLowerCase();
+    const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip || '127.0.0.1';
 
     const Waitlist = require('../models/Waitlist');
-    const existing = await Waitlist.findOne({ email: cleanEmail });
-    if (existing) {
-      return res.status(400).json({ error: 'Email is already on the waitlist' });
+
+    // 1. IP uniqueness check
+    const existingIp = await Waitlist.findOne({ ip });
+    if (existingIp) {
+      return res.status(400).json({ error: 'This device has already joined the waitlist.' });
     }
 
+    // 2. Email validation (if provided)
+    let cleanEmail = null;
+    if (email) {
+      if (typeof email !== 'string' || !email.includes('@')) {
+        return res.status(400).json({ error: 'A valid email is required' });
+      }
+      cleanEmail = email.trim().toLowerCase();
+
+      // Check if email already on waitlist
+      const existingEmail = await Waitlist.findOne({ email: cleanEmail });
+      if (existingEmail) {
+        return res.status(400).json({ error: 'Email is already on the waitlist.' });
+      }
+    }
+
+    // 3. Save entry
     const entry = new Waitlist({
-      email: cleanEmail,
-      name: name ? name.trim() : undefined
+      ip,
+      email: cleanEmail || undefined,
+      userAgent,
+      language,
+      platform,
+      screenResolution,
+      timeZone,
+      cpuCores: cpuCores ? parseInt(cpuCores, 10) : undefined,
+      deviceMemory: deviceMemory ? parseInt(deviceMemory, 10) : undefined,
+      connectionType,
+      referrer
     });
     await entry.save();
 
-    // Send confirmation email via Resend
-    const apiKey = process.env.EMAIL_API_KEY;
-    const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
-    if (apiKey && !apiKey.startsWith('re_your_')) {
-      try {
-        const { Resend } = require('resend');
-        const resend = new Resend(apiKey);
-        
-        const recipientName = name ? name.trim() : 'there';
-        await resend.emails.send({
-          from: fromEmail,
-          to: [cleanEmail],
-          subject: 'You are on the Waitlist! 🎉',
-          html: `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px 24px; border: 1px solid #f0f0f0; border-radius: 12px; color: #2d3748;">
-              <h2 style="font-size: 22px; font-weight: 700; color: #6366f1; margin-top: 0; margin-bottom: 16px;">You're on the list! 🎉</h2>
-              <p style="font-size: 16px; line-height: 1.6; color: #4a5568; margin-bottom: 12px;">Hi ${recipientName},</p>
-              <p style="font-size: 16px; line-height: 1.6; color: #4a5568; margin-bottom: 16px;">Thanks for signing up! You have successfully joined the waitlist for the College Dating App.</p>
-              <p style="font-size: 16px; line-height: 1.6; color: #4a5568; margin-bottom: 24px;">We're currently polishing the app to make campus dating and friendship discovery safe, secure, and fun. We will drop you an email the second early access opens for your campus!</p>
-              <div style="border-top: 1px solid #edf2f7; padding-top: 20px; text-align: center;">
-                <span style="font-size: 13px; color: #a0aec0; font-weight: 500;">College Dating App Team</span>
+    // 4. Send confirmation email (only if email was supplied)
+    if (cleanEmail) {
+      const apiKey = process.env.EMAIL_API_KEY;
+      const fromEmail = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+      if (apiKey && !apiKey.startsWith('re_your_')) {
+        try {
+          const { Resend } = require('resend');
+          const resend = new Resend(apiKey);
+          
+          await resend.emails.send({
+            from: fromEmail,
+            to: [cleanEmail],
+            subject: 'You are on the Waitlist! 🎉',
+            html: `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px 24px; border: 1px solid #f0f0f0; border-radius: 12px; color: #2d3748;">
+                <h2 style="font-size: 22px; font-weight: 700; color: #6366f1; margin-top: 0; margin-bottom: 16px;">You're on the list! 🎉</h2>
+                <p style="font-size: 16px; line-height: 1.6; color: #4a5568; margin-bottom: 12px;">Hi there,</p>
+                <p style="font-size: 16px; line-height: 1.6; color: #4a5568; margin-bottom: 16px;">Thanks for signing up! You have successfully joined the waitlist for the College Dating App.</p>
+                <p style="font-size: 16px; line-height: 1.6; color: #4a5568; margin-bottom: 24px;">We're currently polishing the app to make campus dating and friendship discovery safe, secure, and fun. We will drop you an email the second early access opens for your campus!</p>
+                <div style="border-top: 1px solid #edf2f7; padding-top: 20px; text-align: center;">
+                  <span style="font-size: 13px; color: #a0aec0; font-weight: 500;">College Dating App Team</span>
+                </div>
               </div>
-            </div>
-          `
-        });
-      } catch (emailErr) {
-        console.error('[WAITLIST EMAIL EXCEPTION] Failed to send confirmation email:', emailErr.message);
+            `
+          });
+        } catch (emailErr) {
+          console.error('[WAITLIST EMAIL EXCEPTION] Failed to send confirmation email:', emailErr.message);
+        }
       }
     }
 

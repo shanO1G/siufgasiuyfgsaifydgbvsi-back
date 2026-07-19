@@ -455,8 +455,15 @@ router.post('/forgot-password', async (req, res) => {
     user.resetPasswordExpires = Date.now() + 600000; // 10 minutes (600,000 ms)
     await user.save();
 
-    // Get frontend reset link
-    const frontendUrl = process.env.FRONTEND_URL || (process.env.APP_ORIGINS || 'http://localhost:3000').split(',')[0].trim();
+    // Get frontend reset link dynamically from requesting origin/referer headers, falling back to config envs
+    let origin = req.headers.origin;
+    if (!origin && req.headers.referer) {
+      try {
+        const refUrl = new URL(req.headers.referer);
+        origin = refUrl.origin;
+      } catch (e) {}
+    }
+    const frontendUrl = process.env.FRONTEND_URL || origin || (process.env.APP_ORIGINS || 'http://localhost:3000').split(',')[0].trim();
     const resetLink = `${frontendUrl}/reset-password?token=${token}&email=${encodeURIComponent(cleanEmail)}`;
 
     // Send email with reset link via Resend
