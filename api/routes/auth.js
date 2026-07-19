@@ -60,35 +60,57 @@ function validateStringLength(value, maxLength) {
   return typeof value === 'string' && value.length <= maxLength;
 }
 
-// POST /api/auth/signup
 router.post('/signup', async (req, res) => {
   try {
     const { email, username, password, name, age, gender, lookingFor, bio } = req.body;
 
     // 1. Basic presence validation
-    if (!email || !username || !password || !name || age === undefined) {
-      return res.status(400).json({ error: 'Required fields: email, username, password, name, age' });
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Required fields: email, password' });
     }
 
-    // 2. Input length caps
+    // 2. Input length caps & password rules
     if (!validateStringLength(password, 128)) return res.status(400).json({ error: 'Password too long (max 128 chars)' });
-    if (!validateStringLength(name, 100)) return res.status(400).json({ error: 'Name too long (max 100 chars)' });
-    if (!validateStringLength(username, 50)) return res.status(400).json({ error: 'Username too long (max 50 chars)' });
-    if (bio && !validateStringLength(bio, 500)) return res.status(400).json({ error: 'Bio too long (max 500 chars)' });
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
-    // 3. Minimum age check (18)
-    if (parseInt(age, 10) < 18) {
-      return res.status(400).json({ error: 'You must be at least 18 years old to sign up' });
+    if (name && !validateStringLength(name, 100)) return res.status(400).json({ error: 'Name too long (max 100 chars)' });
+    if (username && !validateStringLength(username, 50)) return res.status(400).json({ error: 'Username too long (max 50 chars)' });
+    if (bio && !validateStringLength(bio, 500)) return res.status(400).json({ error: 'Bio too long (max 500 chars)' });
+
+    // 3. Generate or sanitise username
+    let finalUsername = username ? username.toLowerCase().trim() : '';
+    if (!finalUsername) {
+      const prefix = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_.]/g, '');
+      finalUsername = prefix || 'user';
+      let exists = await User.exists({ username: finalUsername });
+      while (exists) {
+        finalUsername = `${prefix}_${Math.floor(1000 + Math.random() * 9000)}`;
+        exists = await User.exists({ username: finalUsername });
+      }
     }
 
-    // 4. Check if user already exists
-    const existingUser = await User.findOne({ $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }] });
-    if (existingUser) {
-      return res.status(400).json({ error: 'Email or username already registered' });
+    const finalName = name ? name.trim() : finalUsername;
+
+    // 4. Minimum age check (18) if age is provided
+    let finalAge;
+    if (age !== undefined && age !== null && age !== '') {
+      finalAge = parseInt(age, 10);
+      if (isNaN(finalAge) || finalAge < 18) {
+        return res.status(400).json({ error: 'You must be at least 18 years old to sign up' });
+      }
     }
 
-    // 5. Signup cluster check (IP velocity rate limiting / flagging)
+    // 5. Check if user already exists
+    const existingEmail = await User.findOne({ email: email.toLowerCase() });
+    if (existingEmail) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+    const existingUsername = await User.findOne({ username: finalUsername });
+    if (existingUsername) {
+      return res.status(400).json({ error: 'Username already taken' });
+    }
+
+    // 6. Signup cluster check (IP velocity rate limiting / flagging)
     const ip = req.ip || '127.0.0.1';
     const signupKey = `signup:${ip}`;
     const signupCount = await redis.incr(signupKey);
@@ -96,15 +118,15 @@ router.post('/signup', async (req, res) => {
       await redis.expire(signupKey, SIGNUP_CLUSTER_WINDOW_SECONDS);
     }
 
-    // 6. Create user
+    // 7. Create user
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
     const user = new User({
       email: email.toLowerCase().trim(),
-      username: username.toLowerCase().trim(),
-      name: name.trim(),
-      age: parseInt(age, 10),
+      username: finalUsername,
+      name: finalName,
+      age: finalAge,
       gender,
       lookingFor,
       bio: bio ? bio.trim() : '',

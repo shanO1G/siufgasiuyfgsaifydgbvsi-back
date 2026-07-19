@@ -367,8 +367,8 @@ async function fetchUsers() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>
-        <strong>${user.name}</strong><br>
-        <span class="text-secondary">@${user.username} (Age ${user.age})</span>
+        <strong>${user.name || 'Not Set'}</strong><br>
+        <span class="text-secondary">@${user.username} (Age ${user.age !== undefined && user.age !== null ? user.age : 'Not Set'})</span>
       </td>
       <td>${user.email}</td>
       <td><span class="badge-status ${user.identityStatus === 'verified' ? 'success' : 'secondary'}">${user.identityStatus}</span></td>
@@ -382,7 +382,8 @@ async function fetchUsers() {
       <td><span class="badge-status ${user.banned ? 'high' : 'success'}">${user.banned ? 'Banned' : 'Active'}</span></td>
       <td>
         <div class="table-actions">
-          <button class="btn sm secondary" onclick="openUserModal('${user._id}', '${user.name}', '${user.badges?.join(', ') || ''}')">Badges</button>
+          <button class="btn sm secondary" onclick="viewUserProfile('${user._id}')">View</button>
+          <button class="btn sm secondary" onclick="openUserModal('${user._id}', '${user.name || ''}', '${user.badges?.join(', ') || ''}')">Badges</button>
           ${user.banned 
             ? `<button class="btn sm secondary" onclick="unbanUser('${user._id}')">Unban</button>`
             : `<button class="btn sm primary danger" onclick="banUserPrompt('${user._id}')">Ban</button>`
@@ -527,3 +528,95 @@ announcementForm.addEventListener('submit', async (e) => {
     document.getElementById('announce-content').value = '';
   }
 });
+
+// ------------------------------------------------------------------
+// 7. USER PROFILE DETAIL MODAL
+// ------------------------------------------------------------------
+const profileViewModal = document.getElementById('profile-view-modal');
+const profileViewClose = document.getElementById('profile-view-close');
+
+profileViewClose.addEventListener('click', () => {
+  profileViewModal.classList.add('hidden');
+});
+
+async function viewUserProfile(userId) {
+  const data = await apiFetch(`/users/${userId}`);
+  if (!data || !data.user) {
+    alert('Failed to retrieve user details.');
+    return;
+  }
+
+  const user = data.user;
+  const detailsDiv = document.getElementById('profile-view-details');
+
+  // Render pictures
+  let picturesHTML = '';
+  if (user.pictures && user.pictures.length > 0) {
+    picturesHTML = `
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
+        ${user.pictures.map(pic => `
+          <img src="${pic.url}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border-color);" alt="User Photo">
+        `).join('')}
+      </div>
+    `;
+  } else {
+    picturesHTML = '<p class="text-secondary" style="margin-bottom: 16px;">No profile pictures uploaded.</p>';
+  }
+
+  // Render tags/skills/hobbies
+  const hobbiesHTML = user.hobbies && user.hobbies.length > 0
+    ? user.hobbies.map(h => `<span class="badge-status secondary" style="margin-right: 4px; margin-bottom: 4px; display: inline-block;">${h}</span>`).join('')
+    : 'None';
+  const skillsHTML = user.skills && user.skills.length > 0
+    ? user.skills.map(s => `<span class="badge-status secondary" style="margin-right: 4px; margin-bottom: 4px; display: inline-block;">${s}</span>`).join('')
+    : 'None';
+
+  detailsDiv.innerHTML = `
+    ${picturesHTML}
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+      <div><strong>Full Name:</strong> ${user.name || 'Not set'}</div>
+      <div><strong>Username:</strong> @${user.username || 'Not set'}</div>
+      <div><strong>Email:</strong> ${user.email}</div>
+      <div><strong>Age:</strong> ${user.age !== undefined && user.age !== null ? user.age : 'Not set'}</div>
+      <div><strong>Gender:</strong> ${user.gender || 'Not set'}</div>
+      <div><strong>Looking For:</strong> ${user.lookingFor || 'Not set'}</div>
+      <div><strong>Sexual Orientation:</strong> ${user.sexualOrientation || 'Not set'}</div>
+      <div><strong>Height:</strong> ${user.height ? user.height + ' cm' : 'Not set'}</div>
+      <div><strong>School:</strong> ${user.school || 'Not set'}</div>
+      <div><strong>Course:</strong> ${user.course || 'Not set'}</div>
+      <div><strong>Identity Status:</strong> <span class="badge-status ${user.identityStatus === 'verified' ? 'success' : 'secondary'}">${user.identityStatus}</span></div>
+      <div><strong>Open Flags:</strong> <span class="badge-status ${user.openFlagCount > 0 ? 'high' : 'low'}">${user.openFlagCount} open</span></div>
+      <div><strong>Premium Account:</strong> ${user.isPremium ? 'Yes ✓' : 'No'}</div>
+      <div><strong>Banned Status:</strong> <span class="badge-status ${user.banned ? 'high' : 'success'}">${user.banned ? 'Banned' : 'Active'}</span></div>
+    </div>
+
+    <div style="margin-top: 16px;">
+      <strong>Bio:</strong>
+      <p style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px; margin: 4px 0 0 0; min-height: 40px; font-style: italic;">
+        ${user.bio || 'No bio provided.'}
+      </p>
+    </div>
+
+    <div style="margin-top: 16px;">
+      <strong>Hobbies:</strong><br>
+      <div style="margin-top: 4px;">${hobbiesHTML}</div>
+    </div>
+
+    <div style="margin-top: 12px;">
+      <strong>Skills:</strong><br>
+      <div style="margin-top: 4px;">${skillsHTML}</div>
+    </div>
+
+    <div style="margin-top: 12px;">
+      <strong>Badges:</strong> ${user.badges && user.badges.length > 0 ? user.badges.join(', ') : 'None'}
+    </div>
+
+    ${user.banned && user.banReason ? `
+      <div style="margin-top: 12px; border: 1px solid var(--accent-color); padding: 8px; border-radius: 6px; background: rgba(255, 75, 75, 0.1);">
+        <strong>Ban Reason:</strong> ${user.banReason}
+      </div>
+    ` : ''}
+  `;
+
+  profileViewModal.classList.remove('hidden');
+}

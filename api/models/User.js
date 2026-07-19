@@ -21,11 +21,11 @@ const userSchema = new mongoose.Schema({
   },
   name: {
     type: String,
-    required: true
+    required: false
   },
   age: {
     type: Number,
-    required: true
+    required: false
   },
   school: {
     type: String,

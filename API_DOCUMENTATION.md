@@ -98,10 +98,10 @@ Create a new user account.
 | Field | Required | Rules |
 |---|---|---|
 | `email` | Yes | Any valid email |
-| `username` | Yes | Max 50 chars, must be unique |
+| `username` | No | Max 50 chars, unique. Auto-generated from email prefix if omitted. |
 | `password` | Yes | 8–128 chars |
-| `name` | Yes | Max 100 chars |
-| `age` | Yes | Integer, minimum 18 |
+| `name` | No | Max 100 chars. Defaults to username if omitted. |
+| `age` | No | Integer, minimum 18 (validated only if supplied). |
 | `gender` | No | `"male"` \| `"female"` \| `"other"` |
 | `lookingFor` | No | `"friends"` \| `"dating"` |
 | `bio` | No | Max 500 chars |
