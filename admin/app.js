@@ -1,5 +1,5 @@
 // Admin Panel Application logic
-const API_BASE = 'http://localhost:5000/api/admin';
+const API_BASE = 'https://frnd-api-n3hv.onrender.com/api/admin';
 
 // DOM elements
 const loginContainer = document.getElementById('login-container');
