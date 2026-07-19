@@ -335,11 +335,19 @@ router.get('/matches', authRequired, async (req, res) => {
 
       const partner = await User.findById(partnerId)
         .select('name age school course gender pictures bio badges identityStatus');
+      if (!partner) return null;
+
+      // Fetch presence online status from Redis
+      const isOnline = await redis.get(`presence:${partnerId.toString()}`);
+
       return {
         id: m._id,
         matchedAt: m.matchedAt,
         conversationId: m.conversationId,
-        partner
+        partner: {
+          ...partner.toObject(),
+          isOnline: !!isOnline
+        }
       };
     }));
 
@@ -552,6 +560,88 @@ router.post('/feedback', authRequired, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error submitting feedback' });
+  }
+});
+
+// GET /api/conversations/:conversationId/messages (Chat History)
+router.get('/conversations/:conversationId/messages', authRequired, async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const userId = req.user.id;
+
+    // Security check: ensure requesting user is part of this match
+    const match = await Match.findOne({ conversationId });
+    if (!match) {
+      return res.status(404).json({ error: 'Conversation not found or not matched' });
+    }
+
+    if (match.userA.toString() !== userId && match.userB.toString() !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const skip = (page - 1) * limit;
+
+    const Message = require('../models/Message');
+    const [messages, total] = await Promise.all([
+      Message.find({ conversationId })
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(limit),
+      Message.countDocuments({ conversationId })
+    ]);
+
+    res.json({ messages, page, limit, total });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error fetching messages' });
+  }
+});
+
+// GET /api/announcements (Announcements list for regular users)
+router.get('/announcements', authRequired, async (req, res) => {
+  try {
+    const Announcement = require('../models/Announcement');
+    const announcements = await Announcement.find({})
+      .sort({ createdAt: -1 })
+      .limit(10);
+    res.json({ announcements });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error fetching announcements' });
+  }
+});
+
+// POST /api/waitlist (Public waitlist sign-up)
+router.post('/waitlist', async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return res.status(400).json({ error: 'A valid email is required' });
+    }
+    if (name && !validateStringLength(name, 100)) {
+      return res.status(400).json({ error: 'Name is too long (max 100 chars)' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    const Waitlist = require('../models/Waitlist');
+    const existing = await Waitlist.findOne({ email: cleanEmail });
+    if (existing) {
+      return res.status(400).json({ error: 'Email is already on the waitlist' });
+    }
+
+    const entry = new Waitlist({
+      email: cleanEmail,
+      name: name ? name.trim() : undefined
+    });
+    await entry.save();
+
+    res.status(201).json({ message: 'Successfully joined the waitlist!' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error joining waitlist' });
   }
 });
 

@@ -412,7 +412,8 @@ List all mutual matches. Requires authentication cookie.
         "name": "Jane Smith",
         "age": 20,
         "gender": "female",
-        "identityStatus": "verified"
+        "identityStatus": "verified",
+        "isOnline": true
       }
     }
   ]
@@ -558,6 +559,77 @@ Service health check. No authentication required.
   "timestamp": "2026-07-19T12:00:00.000Z",
   "redis": { "isMock": false, "connected": true },
   "mongo": "connected"
+}
+```
+
+---
+
+#### GET `/api/conversations/:conversationId/messages`
+
+Fetch the paginated historical messages of a specific match conversation. Requires authentication cookie or Bearer token.
+
+**Query params:** `?page=1&limit=50` (limit capped at 100)
+
+**Response (200 OK):**
+```json
+{
+  "messages": [
+    {
+      "_id": "651a2b3c4d5e6f7a8b9c0d5a",
+      "conversationId": "conv_651a...1e_651a...2f",
+      "senderId": "651a2b3c4d5e6f7a8b9c0d1e",
+      "ciphertext": "a1f2b3e4...",
+      "iv": "x9y8z7w6...",
+      "timestamp": "2026-07-19T11:12:00.000Z",
+      "delivered": true
+    }
+  ],
+  "page": 1,
+  "limit": 50,
+  "total": 12
+}
+```
+
+> **Security Guard:** Rejects requests with HTTP 403 if the authenticated user is not one of the two matched participants.
+
+---
+
+#### GET `/api/announcements`
+
+List system announcements for regular users. Requires authentication cookie or Bearer token.
+
+**Response (200 OK):**
+```json
+{
+  "announcements": [
+    {
+      "_id": "651a2b3c4d5e6f7a8b9c0d5b",
+      "title": "🎉 Welcome to Frnd Beta!",
+      "content": "Explore, connect, and enjoy dating and friends discovery!",
+      "createdAt": "2026-07-19T11:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+#### POST `/api/waitlist`
+
+Sign up for the app's waitlist. No authentication required.
+
+**Body:**
+```json
+{
+  "email": "prospective@gmail.com",
+  "name": "Jane Doe"
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "message": "Successfully joined the waitlist!"
 }
 ```
 
@@ -994,6 +1066,67 @@ Publish a system announcement.
 **Response (201 Created):**
 ```json
 { "message": "Announcement posted successfully", "announcement": { ... } }
+```
+
+---
+
+#### GET `/api/admin/waitlist`
+
+List all entries on the public waitlist. Requires admin Bearer token.
+
+**Query params:** `?page=1&limit=50`
+
+**Response (200 OK):**
+```json
+{
+  "entries": [
+    {
+      "_id": "651a2b3c4d5e6f7a8b9c0d6a",
+      "email": "prospective@gmail.com",
+      "name": "Jane Doe",
+      "joinedAt": "2026-07-19T12:00:00.000Z"
+    }
+  ],
+  "page": 1,
+  "limit": 50,
+  "total": 1
+}
+```
+
+---
+
+#### GET `/api/admin/actions`
+
+Audit log of all actions taken by administrators. Requires admin Bearer token.
+
+**Query params:** `?page=1&limit=50`
+
+**Response (200 OK):**
+```json
+{
+  "actions": [
+    {
+      "_id": "651a2b3c4d5e6f7a8b9c0d6b",
+      "actionType": "ban_user",
+      "adminId": {
+        "_id": "651a2b3c4d5e6f7a8b9c0d6c",
+        "email": "admin@stu.adamasuniversity.ac.in"
+      },
+      "targetUserId": {
+        "_id": "651a2b3c4d5e6f7a8b9c0d6d",
+        "username": "karan_m",
+        "email": "karan@gmail.com"
+      },
+      "details": {
+        "reason": "Harassment and inappropriate content"
+      },
+      "createdAt": "2026-07-19T12:05:00.000Z"
+    }
+  ],
+  "page": 1,
+  "limit": 50,
+  "total": 42
+}
 ```
 
 ---

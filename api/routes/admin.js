@@ -551,4 +551,43 @@ router.post('/verification-requests/:id/reject', adminAuthRequired, async (req, 
   }
 });
 
+// GET /api/admin/waitlist
+router.get('/waitlist', adminAuthRequired, async (req, res) => {
+  try {
+    const { page, limit, skip } = getPagination(req.query);
+    const Waitlist = require('../models/Waitlist');
+    const [entries, total] = await Promise.all([
+      Waitlist.find({})
+        .sort({ joinedAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Waitlist.countDocuments({})
+    ]);
+    res.json({ entries, page, limit, total });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error fetching waitlist' });
+  }
+});
+
+// GET /api/admin/actions
+router.get('/actions', adminAuthRequired, async (req, res) => {
+  try {
+    const { page, limit, skip } = getPagination(req.query);
+    const [actions, total] = await Promise.all([
+      AdminAction.find({})
+        .populate('adminId', 'email')
+        .populate('targetUserId', 'username email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      AdminAction.countDocuments({})
+    ]);
+    res.json({ actions, page, limit, total });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error fetching admin actions' });
+  }
+});
+
 module.exports = router;
