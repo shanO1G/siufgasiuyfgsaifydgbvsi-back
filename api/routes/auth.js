@@ -504,6 +504,7 @@ router.post('/forgot-password', async (req, res) => {
 // Serves a beautiful, mobile-friendly HTML form to reset the password directly in the browser.
 router.get('/reset-password', async (req, res) => {
   try {
+    res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'");
     res.send(`
 <!DOCTYPE html>
 <html lang="en">
@@ -515,11 +516,11 @@ router.get('/reset-password', async (req, res) => {
     :root {
       --primary: #6366f1;
       --primary-hover: #4f46e5;
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --text: #f8fafc;
-      --text-secondary: #94a3b8;
-      --border: #334155;
+      --bg: #000000;
+      --card-bg: #050505;
+      --text: #ffffff;
+      --text-secondary: #737373;
+      --border: #1a1a1a;
     }
     * {
       box-sizing: border-box;
@@ -543,7 +544,7 @@ router.get('/reset-password', async (req, res) => {
       padding: 32px;
       width: 100%;
       max-width: 420px;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
     }
     h2 {
       font-size: 24px;
@@ -573,10 +574,15 @@ router.get('/reset-password', async (req, res) => {
       margin-bottom: 6px;
       color: var(--text-secondary);
     }
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
     input {
       width: 100%;
-      padding: 12px 16px;
-      background-color: #0f172a;
+      padding: 12px 48px 12px 16px;
+      background-color: #000000;
       border: 1px solid var(--border);
       border-radius: 8px;
       color: var(--text);
@@ -586,6 +592,27 @@ router.get('/reset-password', async (req, res) => {
     }
     input:focus {
       border-color: var(--primary);
+    }
+    .toggle-btn {
+      position: absolute;
+      right: 12px;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px;
+      transition: color 0.2s;
+    }
+    .toggle-btn:hover {
+      color: var(--text);
+    }
+    .toggle-btn svg {
+      width: 20px;
+      height: 20px;
+      pointer-events: none;
     }
     .btn {
       width: 100%;
@@ -646,17 +673,37 @@ router.get('/reset-password', async (req, res) => {
 
       <form id="reset-form" onsubmit="event.preventDefault(); return false;">
         <div class="form-group">
-          <label>Email Address</label>
-          <input type="email" id="email-display" disabled>
-        </div>
-        <div class="form-group">
           <label for="new-password">New Password</label>
-          <input type="password" id="new-password" placeholder="••••••••" required autocomplete="new-password">
+          <div class="input-wrapper">
+            <input type="password" id="new-password" placeholder="••••••••" required autocomplete="new-password">
+            <button type="button" class="toggle-btn" onclick="togglePasswordVisibility('new-password', this)">
+              <svg class="eye-open" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-slashed" style="display: none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
           <div class="requirements">Must be between 8 and 128 characters.</div>
         </div>
         <div class="form-group">
           <label for="confirm-password">Confirm Password</label>
-          <input type="password" id="confirm-password" placeholder="••••••••" required>
+          <div class="input-wrapper">
+            <input type="password" id="confirm-password" placeholder="••••••••" required>
+            <button type="button" class="toggle-btn" onclick="togglePasswordVisibility('confirm-password', this)">
+              <svg class="eye-open" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <svg class="eye-slashed" style="display: none;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </button>
+          </div>
         </div>
         <button type="submit" id="submit-btn" class="btn">Reset Password</button>
       </form>
@@ -676,7 +723,6 @@ router.get('/reset-password', async (req, res) => {
     const errorAlert = document.getElementById('error-alert');
     const formContainer = document.getElementById('form-container');
     const successContainer = document.getElementById('success-container');
-    const emailDisplay = document.getElementById('email-display');
 
     // Parse URL query parameters client-side
     const urlParams = new URLSearchParams(window.location.search);
@@ -686,8 +732,22 @@ router.get('/reset-password', async (req, res) => {
     if (!email || !token) {
       formContainer.style.display = 'none';
       showError('The password reset link is invalid or incomplete. Please request a new link.');
-    } else {
-      emailDisplay.value = email;
+    }
+
+    function togglePasswordVisibility(inputId, btn) {
+      const input = document.getElementById(inputId);
+      const eyeOpen = btn.querySelector('.eye-open');
+      const eyeSlashed = btn.querySelector('.eye-slashed');
+
+      if (input.type === 'password') {
+        input.type = 'text';
+        eyeOpen.style.display = 'none';
+        eyeSlashed.style.display = 'block';
+      } else {
+        input.type = 'password';
+        eyeOpen.style.display = 'block';
+        eyeSlashed.style.display = 'none';
+      }
     }
 
     form.addEventListener('submit', async (e) => {
