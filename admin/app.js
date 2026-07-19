@@ -229,6 +229,9 @@ function loadTabContent(tabId) {
     case 'feedback-tab':
       fetchFeedback();
       break;
+    case 'waitlist-tab':
+      fetchWaitlist();
+      break;
   }
 }
 
@@ -488,12 +491,33 @@ async function fetchFeedback() {
   tbody.innerHTML = '';
   if (!data || !data.feedback) return;
 
-  data.feedback.forEach(fb => {
+    data.feedback.forEach(fb => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>@${fb.userId?.username || 'N/A'}</td>
+        <td>${fb.content}</td>
+        <td>${new Date(fb.createdAt).toLocaleString()}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+}
+
+// ------------------------------------------------------------------
+// 5b. WAITLIST LOGS TAB
+// ------------------------------------------------------------------
+async function fetchWaitlist() {
+  const data = await apiFetch('/waitlist');
+  const tbody = document.getElementById('waitlist-table-body');
+  
+  tbody.innerHTML = '';
+  if (!data || !data.entries) return;
+
+  data.entries.forEach(entry => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>@${fb.userId?.username || 'N/A'}</td>
-      <td>${fb.content}</td>
-      <td>${new Date(fb.createdAt).toLocaleString()}</td>
+      <td>${entry.email}</td>
+      <td>${entry.name || 'Not set'}</td>
+      <td>${new Date(entry.joinedAt).toLocaleString()}</td>
     `;
     tbody.appendChild(tr);
   });

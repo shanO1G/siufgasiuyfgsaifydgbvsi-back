@@ -97,6 +97,9 @@
         <button class="nav-item" data-tab="feedback-tab">
           <span class="icon">💬</span> Feedback Logs
         </button>
+        <button class="nav-item" data-tab="waitlist-tab">
+          <span class="icon">📋</span> Waitlist Log
+        </button>
         <button class="nav-item" data-tab="announce-tab">
           <span class="icon">📢</span> System Announcement
         </button>
@@ -221,6 +224,27 @@
                 </tr>
               </thead>
               <tbody id="feedback-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- TAB: WAITLIST -->
+        <section id="waitlist-tab" class="tab-pane">
+          <div class="tab-description">
+            <p>View prospective users who signed up for early access.</p>
+          </div>
+          <div class="table-card">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Name</th>
+                  <th>Joined At</th>
+                </tr>
+              </thead>
+              <tbody id="waitlist-table-body">
                 <!-- Populated dynamically -->
               </tbody>
             </table>
