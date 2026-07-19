@@ -3,20 +3,32 @@ const Admin = require('../models/Admin');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production';
 
-// Regular user authentication middleware (via HTTP-only cookie)
+// Regular user authentication middleware (via HTTP-only cookie or Authorization header fallback)
 const authRequired = (req, res, next) => {
   try {
+    let token;
+
+    // A. Try reading cookie
     const cookieHeader = req.headers.cookie;
-    if (!cookieHeader) {
+    if (cookieHeader) {
+      const tokenCookie = cookieHeader.split('; ').find(row => row.startsWith('token='));
+      if (tokenCookie) {
+        token = tokenCookie.split('=')[1];
+      }
+    }
+
+    // B. Try reading Authorization header (handy fallback for development & API testing)
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+      }
+    }
+
+    if (!token) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const tokenCookie = cookieHeader.split('; ').find(row => row.startsWith('token='));
-    if (!tokenCookie) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const token = tokenCookie.split('=')[1];
     const decoded = jwt.verify(token, JWT_SECRET);
 
     // Ensure this is not an admin token being used for user endpoints

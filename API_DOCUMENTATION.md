@@ -8,8 +8,11 @@ This document provides complete instructions for developers integrating with the
 
 The backend consists of two separate services running in parallel, connected to MongoDB Atlas and Upstash Redis.
 
-- **API Service Port**: `5000` — handles all REST requests and `/api/admin/*` moderation routes
-- **Chat Service Port**: `5001` — handles real-time Socket.IO communication
+### Deployment Endpoints
+- **Production REST API Base URL**: `https://frnd-api-n3hv.onrender.com`
+- **Production Chat WebSocket URL**: `https://frnd-chat-a2cm.onrender.com`
+- **Local Dev REST API**: `http://localhost:5000`
+- **Local Dev Chat WebSocket**: `http://localhost:5001`
 
 ### CORS Policy
 
@@ -19,7 +22,35 @@ The backend consists of two separate services running in parallel, connected to 
 | All other `/api/*` | Origins listed in `APP_ORIGINS` env var (comma-separated) — any other origin receives HTTP 403 |
 | Socket.IO (Chat) | Same `APP_ORIGINS` allowlist |
 
-> **Note:** Both services require an `APP_ORIGINS` environment variable listing permitted frontend origins. Requests from unlisted origins are rejected before reaching any route handler.
+> **Note:** Both services require an `APP_ORIGINS` environment variable listing permitted frontend origins (e.g. `http://localhost:3000,http://localhost:5173` or your production Vercel/Netlify URLs). Requests from unlisted origins are rejected with CORS policy errors.
+
+---
+
+## 1.1. Quick Integration Guide for Frontend Developers
+
+### A. How to Authenticate & Pass the Token
+To make integration smooth, the API supports two ways to authenticate:
+
+1. **Automatic Cookie-Based (Recommended for Web)**
+   - When you call `/api/auth/signup` or `/api/auth/login`, the server automatically sends back a secure `SameSite=Lax` cookie named `token` containing your JWT.
+   - For all subsequent requests, make sure your HTTP client includes credentials:
+     - **Fetch API**: Pass `{ credentials: 'include' }` in the options.
+     - **Axios**: Set `withCredentials: true` in your global config or request options.
+   - *Note on local testing:* If you are running the frontend on `localhost` and calling the production Render API, Chrome/Safari may block cross-origin cookies. If that happens, use the Authorization header fallback below.
+
+2. **Authorization Header Fallback (Recommended for Testing & Native Apps)**
+   - After signing up or logging in, the server returns the user object. Although the HTTP-only cookie is set, you can also authenticate on subsequent requests by sending the token manually:
+     - Header: `Authorization: Bearer <your_jwt_token>`
+   - For admins, **only** the Authorization header is accepted (using `Authorization: Bearer <admin_token>`).
+
+### B. Testing your requests locally
+You can use tools like Postman, Thunder Client, or cURL to query the endpoints. Since cURL/Postman do not enforce browser CORS policies, you can query directly.
+Example login:
+```bash
+curl -X POST https://frnd-api-n3hv.onrender.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"identity": "arjun_s", "password": "Password@123"}'
+```
 
 ---
 
@@ -536,14 +567,14 @@ Service health check. No authentication required.
 
 ### Connection Handshake
 
-Connect to the Socket.IO service at port 5001. The JWT cookie is picked up automatically by the browser for same-site connections; alternatively pass the token in `auth` or `query`.
+Connect to the Socket.IO service at port 5001 (or the production endpoint `https://frnd-chat-a2cm.onrender.com`). The JWT cookie is picked up automatically by the browser for same-site connections; alternatively pass the token in `auth` or `query`.
 
 ```javascript
-// Option A: cookie is sent automatically by the browser
-const socket = io("http://localhost:5001", { transports: ['websocket'] });
+// Option A: cookie is sent automatically by the browser (production endpoint example)
+const socket = io("https://frnd-chat-a2cm.onrender.com", { transports: ['websocket'] });
 
 // Option B: explicit auth (cross-origin SPA or native apps)
-const socket = io("http://localhost:5001", {
+const socket = io("https://frnd-chat-a2cm.onrender.com", {
   auth: { token: jwtToken },
   transports: ['websocket']
 });
