@@ -579,7 +579,7 @@ Paginated discovery feed. Requires authentication cookie.
 ```
 
 > **Profile Visibility Boost Algorithm**:
-> - Automatically excludes: blocked users (both directions), already-liked users, and existing matches.
+> - Automatically excludes: self, blocked users (both directions), **already-liked users**, **disliked/passed users**, and **existing matches**.
 > - Applies a **weighted probability discovery algorithm** based on profile tier boost:
 >   - **Gold Pass**: **6x boost multiplier** (Highest priority in discovery feeds)
 >   - **Silver Pass**: **3x boost multiplier** (Enhanced visibility)
@@ -590,7 +590,7 @@ Paginated discovery feed. Requires authentication cookie.
 #### POST `/api/like/:targetId`
 #### POST `/api/superlike/:targetId`
 
-Like or superlike another user. Requires authentication cookie or Bearer token.
+Like or superlike another user (Right Swipe). Requires authentication cookie or Bearer token.
 
 **Tier Daily Quota Limits (Reset at UTC Midnight):**
 - **Free Tier**: 15 Likes / day, 3 Super Likes / day
@@ -602,20 +602,26 @@ Like or superlike another user. Requires authentication cookie or Bearer token.
 {
   "success": true,
   "matchFormed": true,
-  "conversationId": "conv_651a...1e_651a...2f",
-  "match": { ... }
+  "conversationId": "conv_651a...1e_651a...2f"
 }
 ```
 
-**Daily quotas (UTC midnight reset):**
+---
 
-| Account type | Likes/day | Superlikes/day |
-|---|---|---|
-| College-verified (`emailVerified: true`) | Unlimited | 5 |
-| Outsider — female | 5 | 5 |
-| Outsider — male | 5 | 1 |
+#### POST `/api/dislike/:targetId`
+#### POST `/api/pass/:targetId`
 
-> > 5 like/superlike actions within a 10-second window triggers a `like_velocity_spike` flag (low severity).
+Dislike or pass a profile (Left Swipe). Requires authentication cookie or Bearer token.
+
+> Immediately stores the pass record and excludes the target profile from the user's discovery feed so it is **never suggested again**. Passing is unlimited and does not consume daily like quotas.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Profile passed successfully"
+}
+```
 
 ---
 

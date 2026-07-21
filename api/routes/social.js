@@ -3,6 +3,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const User = require('../models/User');
 const Like = require('../models/Like');
+const Dislike = require('../models/Dislike');
 const Match = require('../models/Match');
 const Block = require('../models/Block');
 const Report = require('../models/Report');
@@ -213,9 +214,13 @@ router.get('/discover', authRequired, async (req, res) => {
     });
     const blockedUserIds = blocks.map(b => b.blockerId.equals(userId) ? b.blockedId : b.blockerId);
 
-    // B. Find existing likes sent by the user
-    const sentLikes = await Like.find({ fromUserId: userId });
+    // B. Find existing likes & dislikes sent by the user
+    const [sentLikes, sentDislikes] = await Promise.all([
+      Like.find({ fromUserId: userId }),
+      Dislike.find({ fromUserId: userId })
+    ]);
     const likedUserIds = sentLikes.map(l => l.toUserId);
+    const dislikedUserIds = sentDislikes.map(d => d.toUserId);
 
     // C. Find existing matches
     const matches = await Match.find({
@@ -223,8 +228,8 @@ router.get('/discover', authRequired, async (req, res) => {
     });
     const matchedUserIds = matches.map(m => m.userA.equals(userId) ? m.userB : m.userA);
 
-    // D. Build exclusion list
-    const excludedIds = [userId, ...blockedUserIds, ...likedUserIds, ...matchedUserIds];
+    // D. Build complete exclusion list (Self, Blocked, Liked, Disliked, Matched)
+    const excludedIds = [userId, ...blockedUserIds, ...likedUserIds, ...dislikedUserIds, ...matchedUserIds];
 
     // E. Discovery query
     const query = {
@@ -404,11 +409,37 @@ async function handleLikeAction(req, res, actionType) {
   }
 }
 
-// POST /api/like/:targetId
-router.post('/like/:targetId', authRequired, (req, res) => handleLikeAction(req, res, 'like'));
+// POST /api/dislike/:targetId & POST /api/pass/:targetId (Left swipe / pass profile)
+async function handleDislikeAction(req, res) {
+  try {
+    const fromUserId = new mongoose.Types.ObjectId(req.user.id);
+    const toUserId = new mongoose.Types.ObjectId(req.params.targetId);
 
-// POST /api/superlike/:targetId
+    if (fromUserId.equals(toUserId)) {
+      return res.status(400).json({ error: 'You cannot pass yourself' });
+    }
+
+    // Save dislike record (upsert)
+    await Dislike.findOneAndUpdate(
+      { fromUserId, toUserId },
+      { createdAt: new Date() },
+      { upsert: true }
+    );
+
+    // Invalidate cached discovery feed
+    await redis.del(`discover:${req.user.id}`);
+
+    res.json({ success: true, message: 'Profile passed successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error processing pass/dislike' });
+  }
+}
+
+router.post('/like/:targetId', authRequired, (req, res) => handleLikeAction(req, res, 'like'));
 router.post('/superlike/:targetId', authRequired, (req, res) => handleLikeAction(req, res, 'superlike'));
+router.post('/dislike/:targetId', authRequired, handleDislikeAction);
+router.post('/pass/:targetId', authRequired, handleDislikeAction);
 
 // ------------------------------------------------------------------
 // 4. MATCHES LIST
