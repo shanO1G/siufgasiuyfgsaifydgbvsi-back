@@ -24,9 +24,69 @@ function validateStringLength(value, maxLength) {
   return typeof value === 'string' && value.length <= maxLength;
 }
 
+const multer = require('multer');
+const { uploadProfilePicture } = require('../utils/uploader');
+
+// Memory storage for multer profile picture upload — with strict MIME type validation
+const uploadPicture = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (allowedMimeTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPEG, PNG, WEBP, and GIF images are allowed.'));
+    }
+  }
+});
+
+// Multer error handler middleware helper
+function handleMulterError(err, req, res, next) {
+  if (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  next();
+}
+
 // ------------------------------------------------------------------
 // 1. OWN PROFILE
 // ------------------------------------------------------------------
+
+// POST /api/upload/picture (Upload normal profile picture, returns url and fileId)
+router.post('/upload/picture', authRequired, uploadPicture.single('picture'), handleMulterError, async (req, res) => {
+  try {
+    const file = req.file || (req.files && req.files[0]);
+    if (!file) {
+      return res.status(400).json({ error: 'Please select an image file to upload (field name: "picture" or "file")' });
+    }
+
+    const picture = await uploadProfilePicture(file);
+
+    // Optional: auto-append to user profile pictures array if requested
+    if (req.body && (req.body.autoSave === 'true' || req.body.autoSave === true)) {
+      const user = await User.findById(req.user.id);
+      if (user) {
+        if (user.pictures.length >= 4) {
+          return res.status(400).json({ error: 'User already has maximum 4 pictures. Update profile array directly.', picture });
+        }
+        user.pictures.push(picture);
+        await user.save();
+      }
+    }
+
+    res.status(201).json({
+      message: 'Picture uploaded successfully',
+      picture: {
+        url: picture.url,
+        fileId: picture.fileId
+      }
+    });
+  } catch (err) {
+    console.error('[PICTURE UPLOAD ERROR]:', err);
+    res.status(500).json({ error: 'Server error uploading profile picture' });
+  }
+});
 
 // GET /api/users/me
 router.get('/users/me', authRequired, async (req, res) => {
@@ -178,12 +238,36 @@ router.get('/discover', authRequired, async (req, res) => {
       else if (user.gender === 'female') query.gender = 'male';
     }
 
-    const profiles = await User.find(query)
-      .select('name age school course gender pictures bio hobbies skills lookingFor identityStatus badges')
-      .skip(skip)
-      .limit(limit);
+    const candidateProfiles = await User.find(query)
+      .select('name age school course gender pictures bio hobbies skills lookingFor identityStatus badges tier subscriptionExpiresAt');
 
-    res.json({ profiles, page, limit });
+    // F. Probability-based Feed Algorithm with 6x/3x/1x Profile Boost
+    const now = new Date();
+    const scoredProfiles = candidateProfiles.map(p => {
+      const isSubActive = p.tier && p.tier !== 'free' && (!p.subscriptionExpiresAt || new Date(p.subscriptionExpiresAt) > now);
+      const activeTier = isSubActive ? p.tier : 'free';
+      
+      // Boost multiplier: Gold = 6x, Silver = 3x, Free = 1x
+      const boostMultiplier = activeTier === 'gold' ? 6 : (activeTier === 'silver' ? 3 : 1);
+      
+      // Weighted ranking score: Higher boost tier profiles are far more likely to rank near the top
+      const weightedScore = (boostMultiplier * 1000) + Math.floor(Math.random() * 500);
+      
+      const doc = p.toObject();
+      delete doc.subscriptionExpiresAt;
+      return {
+        profile: doc,
+        score: weightedScore
+      };
+    });
+
+    // Sort by weighted rank score descending
+    scoredProfiles.sort((a, b) => b.score - a.score);
+
+    // Apply pagination slice
+    const paginatedProfiles = scoredProfiles.slice(skip, skip + limit).map(item => item.profile);
+
+    res.json({ profiles: paginatedProfiles, page, limit, total: scoredProfiles.length });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error during discovery fetch' });
@@ -224,33 +308,36 @@ async function handleLikeAction(req, res, actionType) {
       return res.status(400).json({ error: 'Action blocked' });
     }
 
-    // C. Quota enforcement via Redis
+    // C. Quota enforcement via Tier Subscription & Redis
     const secondsToMidnight = getSecondsToUTCMidnight();
-    const isInsider = user.emailVerified;
-    const gender = user.gender;
+    const now = new Date();
+    
+    // Determine active subscription tier
+    const isSubActive = user.tier && user.tier !== 'free' && (!user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now);
+    const activeTier = isSubActive ? user.tier : 'free';
 
-    let likeLimit = 5;
-    let superlikeLimit = 1;
+    let likeLimit = 15;
+    let superlikeLimit = 3;
 
-    if (isInsider) {
-      likeLimit = Infinity;
-      superlikeLimit = 5;
-    } else if (gender === 'female') {
-      likeLimit = 5;
-      superlikeLimit = 5;
+    if (activeTier === 'gold') {
+      likeLimit = 50;
+      superlikeLimit = 12;
+    } else if (activeTier === 'silver') {
+      likeLimit = 25;
+      superlikeLimit = 6;
+    } else {
+      likeLimit = 15;
+      superlikeLimit = 3;
     }
-    // else: male outsider defaults (5 likes, 1 superlike)
 
     if (actionType === 'like') {
-      if (likeLimit !== Infinity) {
-        const likeKey = `user:${fromUserId}:likes`;
-        const currentLikes = await redis.incr(likeKey);
-        if (currentLikes === 1) {
-          await redis.expire(likeKey, secondsToMidnight);
-        }
-        if (currentLikes > likeLimit) {
-          return res.status(429).json({ error: 'Daily likes quota exceeded' });
-        }
+      const likeKey = `user:${fromUserId}:likes`;
+      const currentLikes = await redis.incr(likeKey);
+      if (currentLikes === 1) {
+        await redis.expire(likeKey, secondsToMidnight);
+      }
+      if (currentLikes > likeLimit) {
+        return res.status(429).json({ error: `Daily likes quota exceeded for ${activeTier.toUpperCase()} tier (${likeLimit} likes/day max). Upgrade to get more!` });
       }
     } else if (actionType === 'superlike') {
       const superlikeKey = `user:${fromUserId}:superlikes`;
@@ -259,7 +346,7 @@ async function handleLikeAction(req, res, actionType) {
         await redis.expire(superlikeKey, secondsToMidnight);
       }
       if (currentSuperlikes > superlikeLimit) {
-        return res.status(429).json({ error: 'Daily superlikes quota exceeded' });
+        return res.status(429).json({ error: `Daily superlikes quota exceeded for ${activeTier.toUpperCase()} tier (${superlikeLimit} superlikes/day max). Upgrade to get more!` });
       }
     }
 

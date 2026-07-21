@@ -250,7 +250,28 @@ Confirm token and reset password directly. No login required.
 
 ---
 
-### Own Profile (`/api/users`)
+### Own Profile & Media (`/api/users` & `/api/upload`)
+
+#### POST `/api/upload/picture`
+
+Upload a normal profile picture. Uploads the image file and returns the generated CDN `url` and `fileId` for profile assignment. Requires authentication cookie or Bearer token.
+
+**Content-Type:** `multipart/form-data`  
+**Field Name:** `picture` (or `file`)  
+**Optional Body Field:** `autoSave` (`true` to automatically append the picture to `user.pictures` array)
+
+**Response (201 Created):**
+```json
+{
+  "message": "Picture uploaded successfully",
+  "picture": {
+    "url": "https://res.cloudinary.com/wxbw5yo4/image/upload/v12345/user_pictures/pic_123456.jpg",
+    "fileId": "user_pictures/pic_123456"
+  }
+}
+```
+
+---
 
 #### GET `/api/users/me`
 
@@ -276,11 +297,150 @@ Fetch the authenticated user's own full profile. Requires authentication cookie.
     "emailVerified": true,
     "identityStatus": "verified",
     "isPremium": false,
+    "tier": "free",
     "badges": [],
     "openFlagCount": 0
   }
 }
 ```
+
+---
+
+## Subscription Tiers & Razorpay Autopay (`/api/payments`)
+
+### Tier Summary & Features
+
+| Feature | Free Tier | Silver Pass (₹39/mo Autopay) | Gold Pass (₹49/mo Autopay) |
+|---|---|---|---|
+| **Price** | ₹0 | **₹39 / 30 Days** | **₹49 / 30 Days** |
+| **Autopay Recurring** | No | **Yes (Auto-renews every 30 days)** | **Yes (Auto-renews every 30 days)** |
+| **Normal Likes** | 15 / day | 25 / day | 50 / day |
+| **Super Likes** | 3 / day | 6 / day | 12 / day |
+| **Feed Profile Boost** | 1x Standard | 3x Higher Visibility | 6x Maximum Visibility |
+
+---
+
+#### GET `/api/payments/tiers`
+
+Fetch all available subscription tier configurations and pricing. No authentication required.
+
+**Response (200 OK):**
+```json
+{
+  "currency": "INR",
+  "billingCycle": "30 Days Autopay Recurring",
+  "tiers": {
+    "free": { "tier": "free", "name": "Free Tier", "priceINR": 0, "pricePaise": 0, "validityDays": 30, "likesLimit": 15, "superlikesLimit": 3, "profileBoost": 1, "isAutopay": false },
+    "silver": { "tier": "silver", "name": "Silver Pass Autopay", "priceINR": 39, "pricePaise": 3900, "validityDays": 30, "likesLimit": 25, "superlikesLimit": 6, "profileBoost": 3, "isAutopay": true },
+    "gold": { "tier": "gold", "name": "Gold Pass Autopay", "priceINR": 49, "pricePaise": 4900, "validityDays": 30, "likesLimit": 50, "superlikesLimit": 12, "profileBoost": 6, "isAutopay": true }
+  }
+}
+```
+
+---
+
+#### POST `/api/payments/create-subscription`
+
+Initialize a Razorpay Autopay Subscription for Silver or Gold tier. Requires authentication cookie or Bearer token. *(Alias: `POST /api/payments/create-order`)*
+
+**Body:**
+```json
+{
+  "tier": "gold" // "silver" or "gold"
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "message": "Razorpay Autopay Subscription initialized successfully",
+  "subscriptionId": "sub_M1234567890",
+  "planId": "plan_gold_4900",
+  "amount": 4900,
+  "amountINR": 49,
+  "currency": "INR",
+  "keyId": "rzp_test_...",
+  "tier": "gold",
+  "tierName": "Gold Pass Autopay",
+  "validityDays": 30,
+  "isAutopay": true
+}
+```
+
+---
+
+#### POST `/api/payments/verify-subscription`
+
+Verify the Razorpay Autopay subscription signature and activate 30-day recurring validity. Requires authentication cookie or Bearer token. *(Alias: `POST /api/payments/verify`)*
+
+**Body:**
+```json
+{
+  "razorpay_subscription_id": "sub_M1234567890",
+  "razorpay_payment_id": "pay_M9876543210",
+  "razorpay_signature": "9a8b7c6d5e4f3a..."
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "🎉 Gold Pass Autopay activated! Autopay will automatically renew every 30 days.",
+  "tier": "gold",
+  "isPremium": true,
+  "autopayStatus": "active",
+  "subscriptionExpiresAt": "2026-08-20T18:00:00.000Z",
+  "limits": {
+    "likesLimit": 50,
+    "superlikesLimit": 12,
+    "profileBoost": 6
+  }
+}
+```
+
+---
+
+#### POST `/api/payments/cancel-subscription`
+
+Cancel recurring Autopay subscription. The user keeps Silver/Gold benefits until their current 30-day period expires. Requires authentication cookie or Bearer token.
+
+**Response (200 OK):**
+```json
+{
+  "message": "Autopay recurring subscription cancelled successfully. Your benefits remain active until your current 30-day period expires.",
+  "autopayStatus": "cancelled",
+  "tier": "gold",
+  "subscriptionExpiresAt": "2026-08-20T18:00:00.000Z"
+}
+```
+
+---
+
+#### GET `/api/payments/subscription-status`
+
+Fetch current user tier status, autopay state, remaining validity days, and active limits. Requires authentication cookie or Bearer token.
+
+**Response (200 OK):**
+```json
+{
+  "tier": "gold",
+  "isPremium": true,
+  "autopayStatus": "active",
+  "subscriptionExpiresAt": "2026-08-20T18:00:00.000Z",
+  "validityDaysRemaining": 30,
+  "limits": {
+    "likesLimit": 50,
+    "superlikesLimit": 12,
+    "profileBoost": 6
+  }
+}
+```
+
+---
+
+#### POST `/api/payments/webhook`
+
+Razorpay server-to-server webhook callback for automated 30-day Autopay renewals (`subscription.charged`, `payment.captured`). Validates HMAC `x-razorpay-signature` header using `RAZORPAY_WEBHOOK_SECRET`.
 
 ---
 
@@ -418,21 +578,32 @@ Paginated discovery feed. Requires authentication cookie.
 }
 ```
 
-> Automatically excludes: blocked users (both directions), already-liked users, and existing matches.
+> **Profile Visibility Boost Algorithm**:
+> - Automatically excludes: blocked users (both directions), already-liked users, and existing matches.
+> - Applies a **weighted probability discovery algorithm** based on profile tier boost:
+>   - **Gold Pass**: **6x boost multiplier** (Highest priority in discovery feeds)
+>   - **Silver Pass**: **3x boost multiplier** (Enhanced visibility)
+>   - **Free Tier**: **1x standard multiplier**
 
 ---
 
 #### POST `/api/like/:targetId`
 #### POST `/api/superlike/:targetId`
 
-Like or superlike another user. Requires authentication cookie.
+Like or superlike another user. Requires authentication cookie or Bearer token.
+
+**Tier Daily Quota Limits (Reset at UTC Midnight):**
+- **Free Tier**: 15 Likes / day, 3 Super Likes / day
+- **Silver Pass**: 25 Likes / day, 6 Super Likes / day
+- **Gold Pass**: 50 Likes / day, 12 Super Likes / day
 
 **Response (200 OK):**
 ```json
 {
   "success": true,
   "matchFormed": true,
-  "conversationId": "conv_651a...1e_651a...2f"
+  "conversationId": "conv_651a...1e_651a...2f",
+  "match": { ... }
 }
 ```
 

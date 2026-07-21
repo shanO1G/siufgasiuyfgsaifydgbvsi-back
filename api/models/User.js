@@ -111,6 +111,29 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  tier: {
+    type: String,
+    enum: ['free', 'silver', 'gold'],
+    default: 'free',
+    index: true
+  },
+  subscriptionExpiresAt: {
+    type: Date
+  },
+  razorpayOrderId: {
+    type: String
+  },
+  razorpayPaymentId: {
+    type: String
+  },
+  razorpaySubscriptionId: {
+    type: String
+  },
+  autopayStatus: {
+    type: String,
+    enum: ['active', 'cancelled', 'halted', 'none'],
+    default: 'none'
+  },
   resetPasswordToken: {
     type: String
   },

@@ -80,7 +80,49 @@ function getSignedPreviewUrl(publicId) {
   }
 }
 
+/**
+ * Uploads a public profile picture to Cloudinary or falls back to local storage.
+ * @param {Object} file - The file object from multer (buffer and originalname)
+ * @returns {Promise<{url: String, fileId: String}>}
+ */
+async function uploadProfilePicture(file) {
+  if (isCloudinaryConfigured) {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'user_pictures',
+          resource_type: 'image'
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve({
+            url: result.secure_url,
+            fileId: result.public_id
+          });
+        }
+      );
+      uploadStream.end(file.buffer);
+    });
+  } else {
+    // Local fallback
+    const uploadsDir = path.join(__dirname, '../public/uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    const filename = `pic_${Date.now()}_${Math.round(Math.random() * 1e9)}${path.extname(file.originalname || '.jpg')}`;
+    const filePath = path.join(uploadsDir, filename);
+    
+    fs.writeFileSync(filePath, file.buffer);
+    
+    return {
+      url: `/uploads/${filename}`,
+      fileId: filename
+    };
+  }
+}
+
 module.exports = {
   uploadVerificationImage,
+  uploadProfilePicture,
   getSignedPreviewUrl
 };
