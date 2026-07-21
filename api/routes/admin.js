@@ -12,6 +12,9 @@ const Feedback = require('../models/Feedback');
 const Announcement = require('../models/Announcement');
 const AdminAction = require('../models/AdminAction');
 const IdentityVerificationRequest = require('../models/IdentityVerificationRequest');
+const Payment = require('../models/Payment');
+const Match = require('../models/Match');
+const Like = require('../models/Like');
 const { getSignedPreviewUrl } = require('../utils/uploader');
 
 const { adminAuthRequired, JWT_SECRET } = require('../middleware/auth');
@@ -43,6 +46,100 @@ async function logAdminAction(adminId, actionType, targetUserId, details) {
     console.error('Failed to log admin action:', err.message);
   }
 }
+
+// ------------------------------------------------------------------
+// 2. STATS & ANALYTICS
+// ------------------------------------------------------------------
+
+// GET /api/admin/stats (Full system metrics & revenue breakdown)
+router.get('/stats', adminAuthRequired, async (req, res) => {
+  try {
+    const [
+      totalUsers,
+      freeUsers,
+      silverUsers,
+      goldUsers,
+      verifiedUsers,
+      bannedUsers,
+      pendingVerifications,
+      openFlags,
+      totalMatches,
+      totalLikes,
+      paidPayments
+    ] = await Promise.all([
+      User.countDocuments({}),
+      User.countDocuments({ $or: [{ tier: 'free' }, { tier: { $exists: false } }] }),
+      User.countDocuments({ tier: 'silver' }),
+      User.countDocuments({ tier: 'gold' }),
+      User.countDocuments({ identityStatus: 'verified' }),
+      User.countDocuments({ banned: true }),
+      IdentityVerificationRequest.countDocuments({ status: 'pending' }),
+      AccountFlag.countDocuments({ status: 'open' }),
+      Match.countDocuments({}),
+      Like.countDocuments({}),
+      Payment.find({ status: { $in: ['paid', 'active'] } })
+    ]);
+
+    const totalRevenue = paidPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+    const silverRevenue = paidPayments.filter(p => p.tier === 'silver').reduce((acc, p) => acc + (p.amount || 0), 0);
+    const goldRevenue = paidPayments.filter(p => p.tier === 'gold').reduce((acc, p) => acc + (p.amount || 0), 0);
+    const activeSubscriptions = paidPayments.filter(p => p.status === 'active' || (p.expiresAt && new Date(p.expiresAt) > new Date())).length;
+
+    res.json({
+      overview: {
+        totalUsers,
+        premiumUsers: silverUsers + goldUsers,
+        freeUsers,
+        silverUsers,
+        goldUsers,
+        verifiedUsers,
+        bannedUsers
+      },
+      financials: {
+        totalRevenueINR: totalRevenue,
+        silverRevenueINR: silverRevenue,
+        goldRevenueINR: goldRevenue,
+        activeSubscriptionsCount: activeSubscriptions,
+        totalTransactionsCount: paidPayments.length
+      },
+      activity: {
+        totalMatches,
+        totalLikes,
+        pendingVerifications,
+        openFlags
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error fetching admin stats' });
+  }
+});
+
+// GET /api/admin/payments (Detailed payment & revenue transactions log)
+router.get('/payments', adminAuthRequired, async (req, res) => {
+  try {
+    const { page, limit, skip } = getPagination(req.query);
+    const tier = req.query.tier;
+    const filter = {};
+    if (tier && ['silver', 'gold'].includes(tier)) {
+      filter.tier = tier;
+    }
+
+    const [payments, total] = await Promise.all([
+      Payment.find(filter)
+        .populate('userId', 'name email username tier')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Payment.countDocuments(filter)
+    ]);
+
+    res.json({ payments, page, limit, total });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error fetching payment logs' });
+  }
+});
 
 // ------------------------------------------------------------------
 // 1. ADMIN AUTHENTICATION
@@ -243,13 +340,25 @@ router.post('/flags/:id/action', adminAuthRequired, (req, res) => transitionFlag
 router.get('/users', adminAuthRequired, async (req, res) => {
   try {
     const { page, limit, skip } = getPagination(req.query);
+    const filter = {};
+    if (req.query.tier && ['free', 'silver', 'gold'].includes(req.query.tier)) {
+      if (req.query.tier === 'free') {
+        filter.$or = [{ tier: 'free' }, { tier: { $exists: false } }];
+      } else {
+        filter.tier = req.query.tier;
+      }
+    }
+    if (req.query.isPremium === 'true') {
+      filter.isPremium = true;
+    }
+
     const [users, total] = await Promise.all([
-      User.find({})
-        .select('name email username gender age school course isPremium openFlagCount banned identityStatus createdAt')
+      User.find(filter)
+        .select('name email username gender age school course isPremium tier subscriptionExpiresAt autopayStatus openFlagCount banned identityStatus createdAt')
         .sort({ openFlagCount: -1, createdAt: -1 })
         .skip(skip)
         .limit(limit),
-      User.countDocuments({})
+      User.countDocuments(filter)
     ]);
     res.json({ users, page, limit, total });
   } catch (err) {

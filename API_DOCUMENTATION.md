@@ -1019,6 +1019,78 @@ Three-factor admin login: email + personal password + shared common password.
 }
 ```
 
+---
+
+### Dashboard Metrics & Revenue Analytics
+
+#### GET `/api/admin/stats`
+
+Fetch comprehensive live system metrics, revenue totals, user tier distributions, and activity statistics. Requires admin Bearer token.
+
+**Response (200 OK):**
+```json
+{
+  "overview": {
+    "totalUsers": 1250,
+    "premiumUsers": 320,
+    "freeUsers": 930,
+    "silverUsers": 200,
+    "goldUsers": 120,
+    "verifiedUsers": 410,
+    "bannedUsers": 15
+  },
+  "financials": {
+    "totalRevenueINR": 13680,
+    "silverRevenueINR": 7800,
+    "goldRevenueINR": 5880,
+    "activeSubscriptionsCount": 320,
+    "totalTransactionsCount": 350
+  },
+  "activity": {
+    "totalMatches": 450,
+    "totalLikes": 3800,
+    "pendingVerifications": 8,
+    "openFlags": 3
+  }
+}
+```
+
+---
+
+#### GET `/api/admin/payments`
+
+Fetch paginated payment transaction logs with user email/name, tier, amount, Razorpay IDs, and status. Requires admin Bearer token.
+
+**Query Params:** `?page=1&limit=50&tier=gold|silver`
+
+**Response (200 OK):**
+```json
+{
+  "payments": [
+    {
+      "_id": "651a2b3c4d5e6f7a8b9c0d90",
+      "userId": {
+        "_id": "651a2b3c4d5e6f7a8b9c0d1e",
+        "name": "Jane Doe",
+        "email": "jane@stu.adamasuniversity.ac.in",
+        "username": "janedoe",
+        "tier": "gold"
+      },
+      "tier": "gold",
+      "amount": 49,
+      "amountPaise": 4900,
+      "currency": "INR",
+      "razorpaySubscriptionId": "sub_M1234567890",
+      "status": "active",
+      "createdAt": "2026-07-21T18:00:00.000Z"
+    }
+  ],
+  "page": 1,
+  "limit": 50,
+  "total": 350
+}
+```
+
 Store this `token` in SPA memory and send it as `Authorization: Bearer <token>` on all subsequent admin API calls.
 
 ---

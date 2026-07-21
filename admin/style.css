@@ -506,14 +506,52 @@ h1, h2, h3, h4, .logo-mark {
     grid-template-columns: 1fr;
   }
 }
-@media (max-width: 480px) {
-  .sidebar-nav {
-    padding: 8px 12px;
-  }
-  .verify-images-container {
-    flex-direction: column;
-  }
-  .image-box img {
-    height: 180px;
-  }
+/* Stats Grid & Metrics Cards */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+  margin-bottom: 28px;
 }
+.stat-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stat-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+.stat-value {
+  font-family: var(--font-title);
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.stat-sub {
+  font-size: 0.75rem;
+  color: var(--text-light);
+}
+
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.tier-badge.free { background-color: #f3f4f6; color: #4b5563; }
+.tier-badge.silver { background-color: #e2e8f0; color: #334155; border: 1px solid #cbd5e1; }
+.tier-badge.gold { background-color: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+

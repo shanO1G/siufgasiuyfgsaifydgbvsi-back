@@ -163,7 +163,7 @@ function showDashboard() {
   loginContainer.classList.add('hidden');
   dashboardContainer.classList.remove('hidden');
   adminEmailDisplay.innerText = email;
-  loadTabContent('flags-tab');
+  loadTabContent('stats-tab');
 }
 
 // Tab navigation
@@ -185,6 +185,14 @@ navItems.forEach(item => {
     loadTabContent(tabId);
   });
 });
+
+// User tier filter event listener
+const userTierFilter = document.getElementById('user-tier-filter');
+if (userTierFilter) {
+  userTierFilter.addEventListener('change', () => {
+    fetchUsers();
+  });
+}
 
 // Safe API Fetch wrapper
 async function apiFetch(path, options = {}) {
@@ -214,6 +222,9 @@ async function apiFetch(path, options = {}) {
 // ------------------------------------------------------------------
 function loadTabContent(tabId) {
   switch (tabId) {
+    case 'stats-tab':
+      fetchStats();
+      break;
     case 'flags-tab':
       fetchFlags();
       break;
@@ -233,6 +244,52 @@ function loadTabContent(tabId) {
       fetchWaitlist();
       break;
   }
+}
+
+// ------------------------------------------------------------------
+// 0. REVENUE & STATS ANALYTICS TAB
+// ------------------------------------------------------------------
+async function fetchStats() {
+  const data = await apiFetch('/stats');
+  if (data) {
+    document.getElementById('stat-total-revenue').innerText = `₹${data.financials?.totalRevenueINR || 0}`;
+    document.getElementById('stat-active-subs').innerText = `${data.financials?.activeSubscriptionsCount || 0}`;
+    document.getElementById('stat-gold-users').innerText = `${data.overview?.goldUsers || 0}`;
+    document.getElementById('stat-silver-users').innerText = `${data.overview?.silverUsers || 0}`;
+    document.getElementById('stat-free-users').innerText = `${data.overview?.freeUsers || 0}`;
+    document.getElementById('stat-verified-users').innerText = `${data.overview?.verifiedUsers || 0}`;
+  }
+  fetchPayments();
+}
+
+async function fetchPayments() {
+  const data = await apiFetch('/payments');
+  const tbody = document.getElementById('payments-table-body');
+  const emptyState = document.getElementById('payments-empty-state');
+  
+  tbody.innerHTML = '';
+  if (!data || !data.payments || data.payments.length === 0) {
+    emptyState.classList.remove('hidden');
+    return;
+  }
+  emptyState.classList.add('hidden');
+
+  data.payments.forEach(p => {
+    const tr = document.createElement('tr');
+    const userDisplay = p.userId ? `<strong>${p.userId.name || 'User'}</strong><br><span class="text-secondary">${p.userId.email}</span>` : 'Unknown User';
+    const tierBadge = p.tier === 'gold' ? '<span class="tier-badge gold">Gold (₹49)</span>' : '<span class="tier-badge silver">Silver (₹39)</span>';
+    const razorpayId = p.razorpaySubscriptionId || p.razorpayPaymentId || p.razorpayOrderId || 'N/A';
+    
+    tr.innerHTML = `
+      <td>${userDisplay}</td>
+      <td>${tierBadge}</td>
+      <td><strong>₹${p.amount}</strong></td>
+      <td><code>${razorpayId}</code></td>
+      <td><span class="badge-status ${p.status === 'active' || p.status === 'paid' ? 'success' : 'medium'}">${p.status}</span></td>
+      <td>${new Date(p.createdAt).toLocaleString()}</td>
+    `;
+    tbody.appendChild(tr);
+  });
 }
 
 // ------------------------------------------------------------------
@@ -360,7 +417,15 @@ rejectForm.addEventListener('submit', async (e) => {
 // 3. USER DIRECTORY TAB
 // ------------------------------------------------------------------
 async function fetchUsers() {
-  const data = await apiFetch('/users');
+  const filterSelect = document.getElementById('user-tier-filter');
+  const selectedTier = filterSelect ? filterSelect.value : 'all';
+  
+  let path = '/users';
+  if (selectedTier && selectedTier !== 'all') {
+    path += `?tier=${selectedTier}`;
+  }
+
+  const data = await apiFetch(path);
   const tbody = document.getElementById('users-table-body');
   
   tbody.innerHTML = '';
@@ -368,31 +433,30 @@ async function fetchUsers() {
 
   data.users.forEach(user => {
     const tr = document.createElement('tr');
+    
+    // Tier badge mapping
+    let tierBadgeHtml = '<span class="tier-badge free">Free</span>';
+    if (user.tier === 'gold') {
+      tierBadgeHtml = '<span class="tier-badge gold">Gold (₹49)</span>';
+    } else if (user.tier === 'silver') {
+      tierBadgeHtml = '<span class="tier-badge silver">Silver (₹39)</span>';
+    }
+
+    // Autopay status mapping
+    const autopayStatus = user.autopayStatus || (user.tier && user.tier !== 'free' ? 'active' : 'none');
+
     tr.innerHTML = `
       <td>
         <strong>${user.name || 'Not Set'}</strong><br>
         <span class="text-secondary">@${user.username} (Age ${user.age !== undefined && user.age !== null ? user.age : 'Not Set'})</span>
       </td>
       <td>${user.email}</td>
+      <td>${tierBadgeHtml}</td>
+      <td><span class="badge-status ${autopayStatus === 'active' ? 'success' : 'secondary'}">${autopayStatus}</span></td>
       <td><span class="badge-status ${user.identityStatus === 'verified' ? 'success' : 'secondary'}">${user.identityStatus}</span></td>
       <td><span class="badge-status ${user.openFlagCount > 0 ? 'high' : 'low'}">${user.openFlagCount} open</span></td>
-      <td>
-        <button class="btn sm secondary" onclick="togglePremium('${user._id}', ${user.isPremium})">
-          ${user.isPremium ? 'Premium ✓' : 'Upgrade'}
-        </button>
-      </td>
-      <td>${user.badges?.join(', ') || 'None'}</td>
       <td><span class="badge-status ${user.banned ? 'high' : 'success'}">${user.banned ? 'Banned' : 'Active'}</span></td>
-      <td>
-        <div class="table-actions">
-          <button class="btn sm secondary" onclick="viewUserProfile('${user._id}')">View</button>
-          <button class="btn sm secondary" onclick="openUserModal('${user._id}', '${user.name || ''}', '${user.badges?.join(', ') || ''}')">Badges</button>
-          ${user.banned 
-            ? `<button class="btn sm secondary" onclick="unbanUser('${user._id}')">Unban</button>`
-            : `<button class="btn sm primary danger" onclick="banUserPrompt('${user._id}')">Ban</button>`
-          }
-        </div>
-      </td>
+      <td>${new Date(user.createdAt).toLocaleDateString()}</td>
     `;
     tbody.appendChild(tr);
   });

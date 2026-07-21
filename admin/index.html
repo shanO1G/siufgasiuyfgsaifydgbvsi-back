@@ -82,7 +82,10 @@
         </div>
       </div>
       <nav class="sidebar-nav">
-        <button class="nav-item active" data-tab="flags-tab">
+        <button class="nav-item active" data-tab="stats-tab">
+          <span class="icon">📊</span> Revenue & Analytics
+        </button>
+        <button class="nav-item" data-tab="flags-tab">
           <span class="icon">⚠️</span> Flags Queue
         </button>
         <button class="nav-item" data-tab="verifications-tab">
@@ -112,15 +115,80 @@
     <!-- Main Content Area -->
     <main class="main-content">
       <header class="content-header">
-        <h1 id="tab-title">Flags Queue</h1>
+        <h1 id="tab-title">Revenue & Analytics</h1>
         <div id="connection-indicator" class="status-indicator">
           <span class="dot connected"></span> Connected
         </div>
       </header>
 
       <div class="scroll-container">
+        <!-- TAB: REVENUE & ANALYTICS -->
+        <section id="stats-tab" class="tab-pane active">
+          <div class="tab-description">
+            <p>Live metrics overview of revenue, active subscriptions, user tiers, and platform engagement.</p>
+          </div>
+
+          <!-- STATS CARDS GRID -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="stat-label">Total Revenue</span>
+              <span id="stat-total-revenue" class="stat-value">₹0</span>
+              <span class="stat-sub">Lifetime earnings</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Active Subscriptions</span>
+              <span id="stat-active-subs" class="stat-value">0</span>
+              <span class="stat-sub">Autopay active users</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Gold Subscribers</span>
+              <span id="stat-gold-users" class="stat-value" style="color: #d97706;">0</span>
+              <span class="stat-sub">₹49/mo pass holders</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Silver Subscribers</span>
+              <span id="stat-silver-users" class="stat-value" style="color: #475569;">0</span>
+              <span class="stat-sub">₹39/mo pass holders</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Free Tier Users</span>
+              <span id="stat-free-users" class="stat-value">0</span>
+              <span class="stat-sub">Standard tier</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Verified Students</span>
+              <span id="stat-verified-users" class="stat-value" style="color: var(--accent-green);">0</span>
+              <span class="stat-sub">ID verified accounts</span>
+            </div>
+          </div>
+
+          <!-- RECENT TRANSACTIONS TABLE -->
+          <h3 style="margin-bottom: 14px; font-size: 1.1rem; color: var(--text-primary);">Recent Payment & Subscription Transactions</h3>
+          <div class="table-card">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>User / Email</th>
+                  <th>Pass Tier</th>
+                  <th>Amount (INR)</th>
+                  <th>Razorpay ID</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="payments-table-body">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+            <div id="payments-empty-state" class="empty-state hidden">
+              <span class="empty-icon">💳</span>
+              <p>No payment transactions recorded yet.</p>
+            </div>
+          </div>
+        </section>
+
         <!-- TAB: FLAGS QUEUE -->
-        <section id="flags-tab" class="tab-pane active">
+        <section id="flags-tab" class="tab-pane">
           <div class="tab-description">
             <p>Action critical violations and automated behavioral velocity triggers.</p>
           </div>
@@ -162,8 +230,17 @@
 
         <!-- TAB: USER DIRECTORY -->
         <section id="users-tab" class="tab-pane">
-          <div class="tab-description">
-            <p>Global directory of registered user profiles. Sorted by highest active flags count.</p>
+          <div class="tab-description" style="display: flex; justify-content: space-between; align-items: center;">
+            <p>Global directory of registered user profiles.</p>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <label for="user-tier-filter" style="font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);">Filter Tier:</label>
+              <select id="user-tier-filter" style="padding: 6px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-secondary);">
+                <option value="all">All Tiers</option>
+                <option value="gold">Gold Subscribers (₹49)</option>
+                <option value="silver">Silver Subscribers (₹39)</option>
+                <option value="free">Free Tier Users</option>
+              </select>
+            </div>
           </div>
           <div class="table-card">
             <table class="data-table">
@@ -171,12 +248,12 @@
                 <tr>
                   <th>Name / Username</th>
                   <th>Email</th>
+                  <th>Tier Pass</th>
+                  <th>Autopay Status</th>
                   <th>Identity</th>
                   <th>Flags</th>
-                  <th>Premium</th>
-                  <th>Badges</th>
                   <th>Status</th>
-                  <th>Actions</th>
+                  <th>Joined At</th>
                 </tr>
               </thead>
               <tbody id="users-table-body">
