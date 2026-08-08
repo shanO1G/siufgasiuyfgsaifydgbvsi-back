@@ -11,6 +11,7 @@ const Message = require('./models/Message');
 const Match = require('./models/Match');
 const User = require('./models/User');
 const AccountFlag = require('./models/AccountFlag');
+const admin = require('./utils/firebase');
 require('dotenv').config();
 
 // Fail fast on missing critical secrets in production
@@ -280,6 +281,26 @@ io.on('connection', async (socket) => {
 
       // Acknowledge receipt to sender
       socket.emit('message_sent', { conversationId, timestamp: msgData.timestamp });
+
+      // Send Push Notification to recipient
+      if (admin.apps.length > 0) {
+        const recipientId = match.userA.toString() === userId ? match.userB.toString() : match.userA.toString();
+        const recipient = await User.findById(recipientId).select('name fcmTokens');
+        const sender = await User.findById(userId).select('name');
+        if (recipient && recipient.fcmTokens && recipient.fcmTokens.length > 0) {
+          admin.messaging().sendEachForMulticast({
+            tokens: recipient.fcmTokens,
+            notification: {
+              title: `New message from ${sender?.name || 'someone'}`,
+              body: 'You have a new message.'
+            },
+            data: {
+              type: 'chat',
+              chatId: conversationId
+            }
+          }).catch(e => console.error('[FCM] Chat push error:', e));
+        }
+      }
     } catch (err) {
       console.error('[CHAT] Error sending message:', err);
       socket.emit('chat_error', { error: 'Failed to process message' });

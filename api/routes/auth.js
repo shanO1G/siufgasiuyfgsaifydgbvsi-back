@@ -1031,4 +1031,56 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+// POST /api/auth/fcm-token
+// Register a new FCM device token for the authenticated user
+router.post('/fcm-token', authRequired, async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: 'Token is required' });
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (!user.fcmTokens) {
+      user.fcmTokens = [];
+    }
+
+    if (!user.fcmTokens.includes(token)) {
+      user.fcmTokens.push(token);
+      await user.save();
+    }
+
+    res.json({ message: 'Token registered successfully' });
+  } catch (err) {
+    console.error('[FCM] Error registering token:', err);
+    res.status(500).json({ error: 'Server error registering token' });
+  }
+});
+
+// DELETE /api/auth/fcm-token
+// Remove an FCM device token for the authenticated user (e.g., on logout)
+router.delete('/fcm-token', authRequired, async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: 'Token is required' });
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (user.fcmTokens && user.fcmTokens.includes(token)) {
+      user.fcmTokens = user.fcmTokens.filter(t => t !== token);
+      await user.save();
+    }
+
+    res.json({ message: 'Token removed successfully' });
+  } catch (err) {
+    console.error('[FCM] Error removing token:', err);
+    res.status(500).json({ error: 'Server error removing token' });
+  }
+});
+
 module.exports = router;

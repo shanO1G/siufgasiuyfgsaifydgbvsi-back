@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
 const User = require('../models/User');
 const AccountFlag = require('../models/AccountFlag');
+const admin = require('../utils/firebase');
 const Report = require('../models/Report');
 const Feedback = require('../models/Feedback');
 const Announcement = require('../models/Announcement');
@@ -776,6 +777,16 @@ router.post('/announce', adminAuthRequired, async (req, res) => {
     await announcement.save();
 
     await logAdminAction(req.admin._id, 'create_announcement', null, { title: title.trim() });
+
+    if (admin.apps.length > 0) {
+      admin.messaging().send({
+        topic: 'global_announcements',
+        notification: {
+          title: title.trim(),
+          body: content.trim()
+        }
+      }).catch(e => console.error('[FCM] Announcement push error:', e));
+    }
 
     res.status(201).json({ message: 'Announcement posted successfully', announcement });
   } catch (err) {

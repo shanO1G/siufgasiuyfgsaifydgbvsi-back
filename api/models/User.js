@@ -162,6 +162,19 @@ const userSchema = new mongoose.Schema({
     enum: ['active', 'cancelled', 'halted', 'none'],
     default: 'none'
   },
+  // ── Google Play Billing fields (new subscribers) ──────────────────────────
+  playPurchaseToken: {
+    type: String,
+    index: true
+  },
+  playProductId: {
+    type: String // 'frnd_silver_pass' | 'frnd_gold_pass'
+  },
+  playSubscriptionState: {
+    type: String,
+    enum: ['active', 'canceled', 'expired', 'on_hold', 'none'],
+    default: 'none'
+  },
   customDesignId: {
     type: String,
     trim: true,
@@ -175,6 +188,10 @@ const userSchema = new mongoose.Schema({
   },
   passwordChangedAt: {
     type: Date
+  },
+  fcmTokens: {
+    type: [String],
+    default: []
   }
 }, {
   timestamps: true,

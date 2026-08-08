@@ -11,6 +11,7 @@ const verificationRoutes = require('./routes/verification');
 const socialRoutes = require('./routes/social');
 const adminRoutes = require('./routes/admin');
 const paymentRoutes = require('./routes/payments');
+const playBillingRoutes = require('./routes/play_billing');
 const careerRoutes = require('./routes/careers');
 require('dotenv').config();
 
@@ -103,6 +104,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/verification', verificationRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/payments/play', playBillingRoutes);
 app.use('/api/careers', careerRoutes);
 app.use('/api', socialRoutes);
 app.use('/api/admin', adminRoutes);

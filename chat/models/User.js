@@ -139,6 +139,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true,
     default: null
+  },
+  fcmTokens: {
+    type: [String],
+    default: []
   }
 }, {
   timestamps: true

@@ -17,6 +17,7 @@ const redis = require('../utils/redis');
 const { authRequired } = require('../middleware/auth');
 const { getOrInitOnboardingConfig, formatUserInterests, formatUserPrompts } = require('../utils/onboardingConfig');
 const emailService = require('../utils/emailService');
+const admin = require('../utils/firebase');
 
 // Pre-load dynamic ESM file-type module at startup scope to avoid per-request resolution overhead
 const fileTypePromise = import('file-type').then(m => m.default || m).catch(() => null);
@@ -607,6 +608,48 @@ async function handleLikeAction(req, res, actionType) {
       await redis.publish('events:notifications', payload).catch(() => {});
     } catch (pubErr) {
       console.error('[NOTIF PUB ERROR]:', pubErr.message);
+    }
+
+    // I. Send Push Notification via Firebase
+    if (admin.apps.length > 0) {
+      try {
+        if (matchFormed) {
+          // Send to both users
+          const tokens = [];
+          if (user.fcmTokens && user.fcmTokens.length > 0) tokens.push(...user.fcmTokens);
+          if (target.fcmTokens && target.fcmTokens.length > 0) tokens.push(...target.fcmTokens);
+          
+          if (tokens.length > 0) {
+            await admin.messaging().sendEachForMulticast({
+              tokens,
+              notification: {
+                title: 'New Match! 🎉',
+                body: `You have a new match! Say hi.`
+              },
+              data: {
+                type: 'chat',
+                chatId: conversationId
+              }
+            });
+          }
+        } else {
+          // Send to target only
+          if (target.fcmTokens && target.fcmTokens.length > 0) {
+            await admin.messaging().sendEachForMulticast({
+              tokens: target.fcmTokens,
+              notification: {
+                title: actionType === 'superlike' ? 'New Superlike! ⭐' : 'New Like! ❤️',
+                body: actionType === 'superlike' ? 'Someone Superliked you! You stand out.' : 'Someone new liked you! Swipe to find out who.'
+              },
+              data: {
+                type: 'like'
+              }
+            });
+          }
+        }
+      } catch (fcmErr) {
+        console.error('[FCM ERROR]:', fcmErr);
+      }
     }
 
     res.json({ success: true, matchFormed, conversationId });
@@ -1272,6 +1315,15 @@ router.post('/posts/:postId/upvote', authRequired, async (req, res) => {
     );
 
     if (post) {
+      if (admin.apps.length > 0 && post.userId.toString() !== userId.toString()) {
+        const author = await User.findById(post.userId);
+        if (author && author.fcmTokens && author.fcmTokens.length > 0) {
+          admin.messaging().sendEachForMulticast({
+            tokens: author.fcmTokens,
+            notification: { title: 'New Upvote! 👍', body: 'Someone upvoted your anonymous post.' }
+          }).catch(e => console.error('[FCM] Upvote push error:', e));
+        }
+      }
       return res.json({
         message: 'Upvoted post',
         userVote: 'upvote',
@@ -1288,6 +1340,15 @@ router.post('/posts/:postId/upvote', authRequired, async (req, res) => {
     );
 
     if (post) {
+      if (admin.apps.length > 0 && post.userId.toString() !== userId.toString()) {
+        const author = await User.findById(post.userId);
+        if (author && author.fcmTokens && author.fcmTokens.length > 0) {
+          admin.messaging().sendEachForMulticast({
+            tokens: author.fcmTokens,
+            notification: { title: 'New Upvote! 👍', body: 'Someone upvoted your anonymous post.' }
+          }).catch(e => console.error('[FCM] Upvote push error:', e));
+        }
+      }
       return res.json({
         message: 'Upvoted post',
         userVote: 'upvote',
