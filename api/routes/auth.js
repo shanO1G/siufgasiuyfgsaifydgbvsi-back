@@ -342,9 +342,10 @@ router.post('/verify-otp', authRequired, async (req, res) => {
     user.emailVerified = true;
     await user.save();
 
-    // 7. Clean up verification records
+    // 7. Clean up verification records and invalidate auth cache
     await redis.del(`otp:${user.email}`);
     await redis.del(`otp_resend_count:${user.email}`);
+    await redis.del(`user_auth_status:${user._id}`);
     await dbVerification.deleteOne();
 
     res.json({ message: 'Email verified successfully', emailVerified: true });
@@ -1051,6 +1052,7 @@ router.post('/fcm-token', authRequired, async (req, res) => {
 
     if (!user.fcmTokens.includes(token)) {
       user.fcmTokens.push(token);
+      if (user.fcmTokens.length > 5) user.fcmTokens = user.fcmTokens.slice(-5);
       await user.save();
     }
 
@@ -1120,7 +1122,6 @@ router.delete('/account', authRequired, async (req, res) => {
     ]);
 
     // 3. Clear Redis Caches
-    await redis.del(`discover:${userId}`).catch(() => {});
     await redis.del(`user:profile:${userId}`).catch(() => {});
 
     // Note: The auth token cookie will be cleared by the client.

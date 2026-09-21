@@ -49,32 +49,10 @@ const io = socketIO(server, {
   }
 });
 
-// Message Queue for Mongoose bulkWrite batching
-let messageQueue = [];
-const BATCH_SIZE = 20;
-const FLUSH_INTERVAL = 2000; // 2 seconds
-
-async function flushMessages() {
-  if (messageQueue.length === 0) return;
-  const batch = [...messageQueue];
-  messageQueue = [];
-
-  try {
-    const ops = batch.map(msg => ({ insertOne: { document: msg } }));
-    await Message.bulkWrite(ops);
-    console.log(`[CHAT] Batch wrote ${batch.length} messages to DB.`);
-  } catch (err) {
-    console.error('[CHAT] Failed to batch write messages. Re-queueing batch...', err);
-    // Put batch back into messageQueue to avoid silent message loss (capped at 1000 to prevent OOM)
-    messageQueue = [...batch, ...messageQueue].slice(0, 1000);
-  }
-}
-
-// Flush messages periodically
-setInterval(flushMessages, FLUSH_INTERVAL);
+// Removed unsafe messageQueue — all messages are now persisted immediately on send.
 
 // Socket.IO JWT authentication middleware
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   try {
     const cookieHeader = socket.handshake.headers.cookie;
     let token;
@@ -99,6 +77,18 @@ io.use((socket, next) => {
     // Block admin tokens from connecting to chat
     if (decoded.aud === 'admin-panel') {
       return next(new Error('Authentication error: admins cannot connect to chat'));
+    }
+
+    const User = require('./models/User');
+    const user = await User.findById(decoded.id).select('emailVerified banned').lean();
+    if (!user) {
+      return next(new Error('Authentication error: user not found'));
+    }
+    if (user.banned) {
+      return next(new Error('Authentication error: account suspended'));
+    }
+    if (!user.emailVerified) {
+      return next(new Error('Authentication error: email verification required'));
     }
 
     socket.user = decoded;
@@ -206,6 +196,19 @@ io.on('connection', async (socket) => {
         return socket.emit('chat_error', { error: 'Access denied to this conversation' });
       }
 
+      // Block check
+      const partnerId = match.userA.toString() === userId ? match.userB : match.userA;
+      const blockExists = await Block.findOne({
+        $or: [
+          { blockerId: userId, blockedId: partnerId },
+          { blockerId: partnerId, blockedId: userId }
+        ]
+      }).lean();
+
+      if (blockExists) {
+        return socket.emit('chat_error', { error: 'Access denied due to block' });
+      }
+
       socket.join(conversationId);
       console.log(`[CHAT] User ${userId} joined room ${conversationId}`);
     } catch (err) {
@@ -219,7 +222,7 @@ io.on('connection', async (socket) => {
       if (!data || typeof data !== 'object') {
         return socket.emit('chat_error', { error: 'Invalid message payload' });
       }
-      const { conversationId, ciphertext, iv } = data;
+      const { conversationId, ciphertext, iv, clientMessageId } = data;
       if (!conversationId || !ciphertext || !iv) {
         return socket.emit('chat_error', { error: 'Invalid message payload' });
       }
@@ -234,18 +237,28 @@ io.on('connection', async (socket) => {
         return socket.emit('chat_error', { error: 'Access denied' });
       }
 
+      // Security Check: Verify Block State
+      const partnerId = match.userA.toString() === userId ? match.userB : match.userA;
+      const blockExists = await Block.findOne({
+        $or: [
+          { blockerId: userId, blockedId: partnerId },
+          { blockerId: partnerId, blockedId: userId }
+        ]
+      }).lean();
+
+      if (blockExists) {
+        return socket.emit('chat_error', { error: 'Access denied due to block' });
+      }
+
       // Update presence
       await redis.set(presenceKey, '1', { EX: 120 });
 
-      // Chat Metadata Spam Flagging (distinct matches messaged in short window)
+      // Chat Metadata Spam Flagging
       const spamKey = `user:${userId}:conversations_messaged`;
       const added = await redis.sAdd(spamKey, conversationId);
       if (added === 1) {
         const count = await redis.sCard(spamKey);
-        if (count === 1) {
-          await redis.expire(spamKey, 3600); // 1 hour tracking window
-        }
-
+        if (count === 1) await redis.expire(spamKey, 3600);
         if (count > 5) {
           const flag = new AccountFlag({
             userId: socket.user.id,
@@ -255,32 +268,72 @@ io.on('connection', async (socket) => {
             status: 'open'
           });
           await flag.save();
-
           await User.findByIdAndUpdate(userId, { $inc: { openFlagCount: 1 } });
         }
       }
 
-      // Prepare message payload (server stores ciphertext + IV only)
+      // IDEMPOTENT PERSISTENCE TO MONGODB
+      // If clientMessageId is provided, use upsert. Otherwise, just create.
+      let messageDoc;
+      const now = new Date();
+      
+      if (clientMessageId && typeof clientMessageId === 'string') {
+        messageDoc = await Message.findOneAndUpdate(
+          { senderId: userId, clientMessageId: clientMessageId },
+          {
+            $setOnInsert: {
+              conversationId,
+              senderId: userId,
+              clientMessageId,
+              ciphertext,
+              iv,
+              timestamp: now,
+              delivered: false
+            }
+          },
+          { upsert: true, new: true }
+        );
+      } else {
+        messageDoc = await Message.create({
+          conversationId,
+          senderId: userId,
+          ciphertext,
+          iv,
+          timestamp: now,
+          delivered: false
+        });
+      }
+
+      // Update Match metadata (lastMessageAt, unread counters)
+      const isUserA = match.userA.toString() === userId;
+      const updateData = { lastMessageAt: now };
+      if (isUserA) {
+        updateData.$inc = { unreadCount_userB: 1 };
+      } else {
+        updateData.$inc = { unreadCount_userA: 1 };
+      }
+      await Match.updateOne({ conversationId }, updateData);
+
       const msgData = {
+        _id: messageDoc._id,
         conversationId,
         senderId: userId,
-        ciphertext,
-        iv,
-        timestamp: new Date(),
-        delivered: false
+        ciphertext: messageDoc.ciphertext,
+        iv: messageDoc.iv,
+        timestamp: messageDoc.timestamp,
+        clientMessageId: messageDoc.clientMessageId
       };
 
       // Relay to room (excluding sender)
       socket.to(conversationId).emit('message_received', msgData);
 
-      // Push to batch insert queue
-      messageQueue.push(msgData);
-      if (messageQueue.length >= BATCH_SIZE) {
-        await flushMessages();
-      }
-
-      // Acknowledge receipt to sender
-      socket.emit('message_sent', { conversationId, timestamp: msgData.timestamp });
+      // Acknowledge receipt to sender authoritatively
+      socket.emit('message_sent', { 
+        conversationId, 
+        messageId: messageDoc._id,
+        clientMessageId: messageDoc.clientMessageId,
+        timestamp: messageDoc.timestamp 
+      });
 
       // Send Push Notification to recipient
       if (admin.apps.length > 0) {
@@ -363,17 +416,41 @@ io.on('connection', async (socket) => {
       const { conversationId } = data;
       if (!conversationId) return;
 
+      // Security Check: verify user belongs to this conversation
+      const match = await Match.findOne({ conversationId }).lean();
+      if (!match || (match.userA.toString() !== userId && match.userB.toString() !== userId)) {
+        return socket.emit('chat_error', { error: 'Access denied' });
+      }
+
+      // Security Check: Verify Block State
+      const partnerId = match.userA.toString() === userId ? match.userB : match.userA;
+      const blockExists = await Block.findOne({
+        $or: [
+          { blockerId: userId, blockedId: partnerId },
+          { blockerId: partnerId, blockedId: userId }
+        ]
+      }).lean();
+
+      if (blockExists) {
+        return socket.emit('chat_error', { error: 'Access denied due to block' });
+      }
+
       // Update all unread messages in this conversation where sender is NOT the current user
       await Message.updateMany(
         { conversationId, senderId: { $ne: userId }, delivered: false },
         { $set: { delivered: true } }
       );
       
-      // Update the messageQueue if there are pending inserts
-      messageQueue.forEach(msg => {
-        if (msg.conversationId === conversationId && msg.senderId !== userId) {
-          msg.delivered = true;
-        }
+      // Update the unreadCount to 0 for this user in Match document
+      const isUserA = match.userA.toString() === userId;
+      const updateData = isUserA ? { unreadCount_userA: 0 } : { unreadCount_userB: 0 };
+      await Match.updateOne({ conversationId }, { $set: updateData });
+
+      // Notify the sender that messages were read
+      socket.to(conversationId).emit('messages_read', {
+        conversationId,
+        readBy: userId,
+        timestamp: new Date()
       });
       
     } catch (err) {
@@ -476,12 +553,7 @@ async function startServer() {
 
     // Graceful Shutdown Handlers (SIGTERM / SIGINT)
     const gracefulShutdown = async (signal) => {
-      console.log(`[CHAT SYS] ${signal} received. Flushing pending messages and closing Chat WebSockets & HTTP server...`);
-      try {
-        await flushMessages();
-      } catch (flushErr) {
-        console.error('[CHAT SYS ERROR] Error flushing messages on shutdown:', flushErr.message);
-      }
+      console.log(`[CHAT SYS] ${signal} received. Closing Chat WebSockets & HTTP server...`);
       io.close();
       server.close(async () => {
         try {

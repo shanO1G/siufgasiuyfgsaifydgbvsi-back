@@ -56,16 +56,22 @@ const authRequired = async (req, res, next) => {
     }
 
     // Fast ban & password change check using Redis cache, falling back to Mongo
-    const banKey = `banned:${decoded.id}`;
+    const cacheKey = `user_auth_status:${decoded.id}`;
     let isBanned = null;
+    let emailVerified = null;
     try {
-      isBanned = await redis.get(banKey);
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        const parts = cached.split(':');
+        isBanned = parts[0];
+        emailVerified = parts[1];
+      }
     } catch (e) {
       // Redis fallback
     }
 
-    if (isBanned === null || isBanned === undefined) {
-      const user = await User.findById(decoded.id).select('banned passwordChangedAt').lean();
+    if (isBanned === null || isBanned === undefined || emailVerified === undefined) {
+      const user = await User.findById(decoded.id).select('banned passwordChangedAt emailVerified').lean();
       if (!user) {
         return res.status(401).json({ error: 'User account not found' });
       }
@@ -78,8 +84,9 @@ const authRequired = async (req, res, next) => {
       }
 
       isBanned = user.banned ? '1' : '0';
+      emailVerified = user.emailVerified ? '1' : '0';
       try {
-        await redis.set(banKey, isBanned, { EX: 300 });
+        await redis.set(cacheKey, `${isBanned}:${emailVerified}`, { EX: 300 });
       } catch (e) {
         // Redis cache write fallback
       }
@@ -89,7 +96,10 @@ const authRequired = async (req, res, next) => {
       return res.status(403).json({ error: 'Your account has been suspended.' });
     }
 
-    req.user = decoded;
+    req.user = {
+      ...decoded,
+      emailVerified: emailVerified === '1'
+    };
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired token' });
@@ -125,8 +135,18 @@ const adminAuthRequired = async (req, res, next) => {
   }
 };
 
+const verifiedAuthRequired = async (req, res, next) => {
+  await authRequired(req, res, () => {
+    if (!req.user.emailVerified) {
+      return res.status(403).json({ error: 'Email verification required to access this resource.' });
+    }
+    next();
+  });
+};
+
 module.exports = {
   authRequired,
   adminAuthRequired,
+  verifiedAuthRequired,
   JWT_SECRET
 };

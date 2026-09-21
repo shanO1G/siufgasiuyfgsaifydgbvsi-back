@@ -284,7 +284,7 @@ router.post('/verify', authRequired, async (req, res) => {
     await payment.save();
 
     // 6. Invalidate caches.
-    await redis.del(`discover:${req.user.id}`, `user:profile:${req.user.id}`).catch(() => {});
+    await redis.del(`user:profile:${req.user.id}`).catch(() => {});
 
     res.json({
       message: `🎉 ${tier === 'gold' ? 'Gold' : 'Silver'} Pass activated via Google Play!`,
@@ -465,7 +465,7 @@ router.post('/rtdn', async (req, res) => {
           activatedAt: now,
           expiresAt: expiresAt,
         }).save();
-        await redis.del(`discover:${user._id}`, `user:profile:${user._id}`).catch(() => {});
+        await redis.del(`user:profile:${user._id}`).catch(() => {});
         break;
       }
 
@@ -494,7 +494,7 @@ router.post('/rtdn', async (req, res) => {
             playSubscriptionState: 'expired',
           },
         });
-        await redis.del(`discover:${user._id}`, `user:profile:${user._id}`).catch(() => {});
+        await redis.del(`user:profile:${user._id}`).catch(() => {});
         break;
 
       case NOTIFICATION.REVOKED:
@@ -507,7 +507,7 @@ router.post('/rtdn', async (req, res) => {
             playSubscriptionState: 'expired',
           },
         });
-        await redis.del(`discover:${user._id}`, `user:profile:${user._id}`).catch(() => {});
+        await redis.del(`user:profile:${user._id}`).catch(() => {});
         break;
 
       case NOTIFICATION.PURCHASED:

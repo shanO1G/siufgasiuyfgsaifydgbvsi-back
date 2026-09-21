@@ -618,7 +618,7 @@ router.post('/users/:id/ban', adminAuthRequired, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     await redis.set(`banned:${user._id}`, '1', { EX: 86400 * 30 }).catch(() => {});
-    await redis.del(`discover:${user._id}`, `user:profile:${user._id}`).catch(() => {});
+    await redis.del(`user:profile:${user._id}`).catch(() => {});
     await logAdminAction(req.admin._id, 'ban_user', user._id, { reason: reason.trim() });
 
     res.json({ message: 'User banned successfully', user });
@@ -643,7 +643,7 @@ router.post('/users/:id/unban', adminAuthRequired, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     await redis.set(`banned:${user._id}`, '0', { EX: 300 }).catch(() => {});
-    await redis.del(`discover:${user._id}`, `user:profile:${user._id}`).catch(() => {});
+    await redis.del(`user:profile:${user._id}`).catch(() => {});
     await logAdminAction(req.admin._id, 'unban_user', user._id, {});
 
     res.json({ message: 'User unbanned successfully', user });
@@ -672,7 +672,7 @@ router.post('/users/:id/premium', adminAuthRequired, async (req, res) => {
 
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    await redis.del(`discover:${user._id}`, `user:profile:${user._id}`).catch(() => {});
+    await redis.del(`user:profile:${user._id}`).catch(() => {});
     await logAdminAction(req.admin._id, 'update_premium', user._id, { isPremium });
 
     res.json({ message: `Premium status set to ${isPremium}`, user });

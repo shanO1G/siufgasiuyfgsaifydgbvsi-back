@@ -19,6 +19,22 @@ const matchSchema = new mongoose.Schema({
   conversationId: {
     type: String,
     required: true
+  },
+  lastMessageAt: {
+    type: Date,
+    default: null
+  },
+  lastMessageText: {
+    type: String,
+    default: null
+  },
+  unreadCount_userA: {
+    type: Number,
+    default: 0
+  },
+  unreadCount_userB: {
+    type: Number,
+    default: 0
   }
 });
 

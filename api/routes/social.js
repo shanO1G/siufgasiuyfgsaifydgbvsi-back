@@ -14,7 +14,7 @@ const AccountFlag = require('../models/AccountFlag');
 const AnonymousPost = require('../models/AnonymousPost');
 const Feedback = require('../models/Feedback');
 const redis = require('../utils/redis');
-const { authRequired } = require('../middleware/auth');
+const { authRequired, verifiedAuthRequired } = require('../middleware/auth');
 const { getOrInitOnboardingConfig, formatUserInterests, formatUserPrompts } = require('../utils/onboardingConfig');
 const emailService = require('../utils/emailService');
 const admin = require('../utils/firebase');
@@ -105,7 +105,7 @@ router.post('/upload/picture', authRequired, uploadPicture.single('picture'), ha
         }
         user.pictures.push(picture);
         await user.save();
-        await redis.del(`discover:${req.user.id}`, `user:profile:${req.user.id}`).catch(() => {});
+        await redis.del(`user:profile:${req.user.id}`).catch(() => {});
       }
     }
 
@@ -274,7 +274,7 @@ router.put('/users/me', authRequired, async (req, res) => {
     }
 
     // Invalidate discovery & profile caches for this user
-    await redis.del(`discover:${req.user.id}`, `user:profile:${req.user.id}`).catch(() => {});
+    await redis.del(`user:profile:${req.user.id}`).catch(() => {});
 
     res.json({ message: 'Profile updated successfully', user });
   } catch (err) {
@@ -308,7 +308,7 @@ router.put('/users/me/design', authRequired, async (req, res) => {
     }
 
     await user.save();
-    await redis.del(`discover:${req.user.id}`, `user:profile:${req.user.id}`).catch(() => {});
+    await redis.del(`user:profile:${req.user.id}`).catch(() => {});
 
     res.json({
       message: user.customDesignId ? 'Custom profile design set successfully' : 'Custom design reset to default',
@@ -324,9 +324,10 @@ router.put('/users/me/design', authRequired, async (req, res) => {
 // 2. DISCOVERY FEED
 // ------------------------------------------------------------------
 const DISCOVER_CACHE_TTL = 300; // 5 minutes — balances freshness vs DB load
+const DISLIKE_RESURFACE_DAYS = 5; // Disliked profiles become eligible for discovery again after 5 days
 
 // GET /api/discover
-router.get('/discover', authRequired, async (req, res) => {
+router.get('/discover', verifiedAuthRequired, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.user.id);
     const user = await User.findById(userId).lean();
@@ -334,9 +335,7 @@ router.get('/discover', authRequired, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
-    const skip = (page - 1) * limit;
 
     // Check if free tier user hit daily swipe limit
     if (user.tier === 'free') {
@@ -355,89 +354,83 @@ router.get('/discover', authRequired, async (req, res) => {
       }
     }
 
-    // --- Cache read: try to serve ranked candidates from Redis before DB ---
-    const cacheKey = `discover:${req.user.id}`;
-    let scoredProfiles = null;
+    // A-C: Fetch blocks, likes, dislikes (time-bounded), matches in parallel
+    // Dropped the `.limit(500)` cap to prevent accidental resurfacing of permanently excluded users (likes/blocks/matches).
+    // Dislikes are excluded ONLY if they occurred within the last `DISLIKE_RESURFACE_DAYS`. 
+    // Dislikes older than this threshold will naturally fall out of the exclusion list and become eligible candidates.
+    const cutoffDate = new Date(Date.now() - (DISLIKE_RESURFACE_DAYS * 24 * 60 * 60 * 1000));
+    
+    const [blocks, sentLikes, sentDislikes, matches] = await Promise.all([
+      Block.find({ $or: [{ blockerId: userId }, { blockedId: userId }] }).lean(),
+      Like.find({ fromUserId: userId }).select('toUserId').lean(),
+      Dislike.find({ fromUserId: userId, createdAt: { $gt: cutoffDate } }).select('toUserId').lean(),
+      Match.find({ $or: [{ userA: userId }, { userB: userId }] }).lean()
+    ]);
 
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      try {
-        scoredProfiles = JSON.parse(cached);
-      } catch (_) {
-        scoredProfiles = null; // corrupt cache — fall through to DB
-      }
-    }
+    const blockedUserIds = blocks.map(b => String(b.blockerId) === String(userId) ? String(b.blockedId) : String(b.blockerId));
+    const likedUserIds = sentLikes.map(l => String(l.toUserId));
+    const dislikedUserIds = sentDislikes.map(d => String(d.toUserId));
+    const matchedUserIds = matches.map(m => String(m.userA) === String(userId) ? String(m.userB) : String(m.userA));
 
-    if (!scoredProfiles) {
-      // A-C: Fetch blocks, likes/dislikes (capped to recent 500), matches in parallel — 1 round-trip instead of 4
-      const [blocks, sentLikes, sentDislikes, matches] = await Promise.all([
-        Block.find({ $or: [{ blockerId: userId }, { blockedId: userId }] }).lean(),
-        Like.find({ fromUserId: userId }).select('toUserId').sort({ _id: -1 }).limit(500).lean(),
-        Dislike.find({ fromUserId: userId }).select('toUserId').sort({ _id: -1 }).limit(500).lean(),
-        Match.find({ $or: [{ userA: userId }, { userB: userId }] }).lean()
-      ]);
+    // D. Build complete exclusion list (Self, Blocked, recent Liked/Disliked, Matched)
+    const excludedIds = new Set([
+      String(userId),
+      ...blockedUserIds,
+      ...likedUserIds,
+      ...dislikedUserIds,
+      ...matchedUserIds
+    ]);
 
-      const blockedUserIds = blocks.map(b => String(b.blockerId) === String(userId) ? b.blockedId : b.blockerId);
-      const likedUserIds = sentLikes.map(l => l.toUserId);
-      const dislikedUserIds = sentDislikes.map(d => d.toUserId);
-      const matchedUserIds = matches.map(m => String(m.userA) === String(userId) ? m.userB : m.userA);
-
-      // D. Build complete exclusion list (Self, Blocked, recent Liked/Disliked up to 1000, Matched)
-      const excludedIds = [
-        userId,
-        ...blockedUserIds,
-        ...likedUserIds.slice(-1000),
-        ...dislikedUserIds.slice(-1000),
-        ...matchedUserIds
-      ];
-
-      // E. Discovery query
-      const query = {
-        _id: { $nin: excludedIds },
-        banned: false
-      };
-
-      // Basic gender preferences for dating mode
-      if (user.lookingFor === 'dating') {
-        if (user.gender === 'male') query.gender = 'female';
-        else if (user.gender === 'female') query.gender = 'male';
-      }
-
-      // .lean() = plain JS objects, ~70% less RAM than Mongoose docs
-      // .limit(200) = safety cap: with 700 users we never need to load all into RAM
-      const candidateProfiles = await User.find(query)
-        .select('name age height school course gender pictures bio hobbies skills lookingFor sexualOrientation identityStatus badges tier subscriptionExpiresAt religion beliefs customDesignId')
-        .sort({ _id: -1 })
-        .limit(200)
-        .lean();
-
-      // F. Probability-based Feed Algorithm with 6x/3x/1x Profile Boost
-      const now = new Date();
-      scoredProfiles = candidateProfiles.map(p => {
-        const isSubActive = p.tier && p.tier !== 'free' && (!p.subscriptionExpiresAt || new Date(p.subscriptionExpiresAt) > now);
-        const activeTier = isSubActive ? p.tier : 'free';
-
-        // Boost multiplier: Gold = 6x, Silver = 3x, Free = 1x
-        const boostMultiplier = activeTier === 'gold' ? 6 : (activeTier === 'silver' ? 3 : 1);
-        const weightedScore = (boostMultiplier * 1000) + Math.floor(Math.random() * 500);
-
-        const doc = { ...p };
-        doc.customDesignId = activeTier === 'gold' ? (p.customDesignId || null) : null;
-        delete doc.subscriptionExpiresAt;
-        return { profile: doc, score: weightedScore };
+    // Include frontend's dynamically excluded IDs (e.g. unswiped profiles in memory)
+    if (req.query.excludeIds) {
+      const clientExcluded = req.query.excludeIds.split(',');
+      clientExcluded.forEach(id => {
+        if (mongoose.Types.ObjectId.isValid(id)) excludedIds.add(id);
       });
-
-      // Sort by weighted rank score descending
-      scoredProfiles.sort((a, b) => b.score - a.score);
-
-      // --- Cache write: store sorted list for 5 minutes ---
-      await redis.set(cacheKey, JSON.stringify(scoredProfiles), { EX: DISCOVER_CACHE_TTL });
     }
+
+    // E. Discovery query
+    const query = {
+      _id: { $nin: Array.from(excludedIds).map(id => new mongoose.Types.ObjectId(id)) },
+      banned: false
+    };
+
+    // Basic gender preferences for dating mode
+    if (user.lookingFor === 'dating') {
+      if (user.gender === 'male') query.gender = 'female';
+      else if (user.gender === 'female') query.gender = 'male';
+    }
+
+    // .lean() = plain JS objects, ~70% less RAM than Mongoose docs
+    const candidateProfiles = await User.find(query)
+      .select('name age height school course gender pictures bio hobbies skills lookingFor sexualOrientation identityStatus badges tier subscriptionExpiresAt religion beliefs customDesignId')
+      .sort({ _id: -1 })
+      .limit(100)
+      .lean();
+
+    // F. Probability-based Feed Algorithm with 6x/3x/1x Profile Boost
+    const now = new Date();
+    const scoredProfiles = candidateProfiles.map(p => {
+      const isSubActive = p.tier && p.tier !== 'free' && (!p.subscriptionExpiresAt || new Date(p.subscriptionExpiresAt) > now);
+      const activeTier = isSubActive ? p.tier : 'free';
+
+      // Boost multiplier: Gold = 6x, Silver = 3x, Free = 1x
+      const boostMultiplier = activeTier === 'gold' ? 6 : (activeTier === 'silver' ? 3 : 1);
+      const weightedScore = (boostMultiplier * 1000) + Math.floor(Math.random() * 500);
+
+      const doc = { ...p };
+      doc.customDesignId = activeTier === 'gold' ? (p.customDesignId || null) : null;
+      delete doc.subscriptionExpiresAt;
+      return { profile: doc, score: weightedScore };
+    });
+
+    // Sort by weighted rank score descending
+    scoredProfiles.sort((a, b) => b.score - a.score);
 
     // Apply pagination slice
-    const paginatedProfiles = scoredProfiles.slice(skip, skip + limit).map(item => item.profile);
+    const paginatedProfiles = scoredProfiles.slice(0, limit).map(item => item.profile);
 
-    res.json({ profiles: paginatedProfiles, page, limit, total: scoredProfiles.length });
+    res.json({ profiles: paginatedProfiles, limit, total: scoredProfiles.length });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error during discovery fetch' });
@@ -610,12 +603,6 @@ async function handleLikeAction(req, res, actionType) {
       if (existingOrNewMatch && existingOrNewMatch.conversationId) {
         conversationId = existingOrNewMatch.conversationId;
       }
-
-      // Invalidate both users' discovery caches — they should no longer see each other
-      await Promise.all([
-        redis.del(`discover:${fromUserId.toString()}`),
-        redis.del(`discover:${toUserId.toString()}`)
-      ]);
 
       console.log(`[MATCH] Mutual match formed: ${fromUserId} <-> ${toUserId} | conversation: ${conversationId}`);
     }
@@ -830,9 +817,6 @@ async function handleDislikeAction(req, res) {
       { upsert: true }
     );
 
-    // Invalidate cached discovery feed
-    await redis.del(`discover:${req.user.id}`);
-
     res.json({ success: true, message: 'Profile passed successfully' });
   } catch (err) {
     console.error(err);
@@ -939,12 +923,13 @@ async function getReceivedLikes(req, res) {
   }
 }
 
-router.post('/like/:targetId', authRequired, (req, res) => handleLikeAction(req, res, 'like'));
-router.post('/superlike/:targetId', authRequired, (req, res) => handleLikeAction(req, res, 'superlike'));
-router.post('/dislike/:targetId', authRequired, handleDislikeAction);
-router.post('/pass/:targetId', authRequired, handleDislikeAction);
-router.get('/likes/received', authRequired, getReceivedLikes);
-router.get('/likes/incoming', authRequired, getReceivedLikes);
+router.post('/like/:targetId', verifiedAuthRequired, (req, res) => handleLikeAction(req, res, 'like'));
+router.post('/superlike/:targetId', verifiedAuthRequired, (req, res) => handleLikeAction(req, res, 'superlike'));
+router.post('/dislike/:targetId', verifiedAuthRequired, handleDislikeAction);
+router.post('/pass/:targetId', verifiedAuthRequired, handleDislikeAction);
+router.get('/likes', verifiedAuthRequired, getReceivedLikes);
+router.get('/likes/received', verifiedAuthRequired, getReceivedLikes);
+router.get('/likes/incoming', verifiedAuthRequired, getReceivedLikes);
 
 // GET /api/likes/given & GET /api/likes/sent
 // Returns history of all accounts liked/superliked in the past by the authenticated user.
@@ -1011,14 +996,14 @@ async function getGivenLikes(req, res) {
   }
 }
 
-router.get('/likes/given', authRequired, getGivenLikes);
-router.get('/likes/sent', authRequired, getGivenLikes);
+router.get('/likes/given', verifiedAuthRequired, getGivenLikes);
+router.get('/likes/sent', verifiedAuthRequired, getGivenLikes);
 
 // ------------------------------------------------------------------
 // 4. MATCHES LIST
 // ------------------------------------------------------------------
 // GET /api/matches
-router.get('/matches', authRequired, async (req, res) => {
+router.get('/matches', verifiedAuthRequired, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.user.id);
 
@@ -1071,10 +1056,15 @@ router.get('/matches', authRequired, async (req, res) => {
           customDesignId: isPartnerGold ? (partner.customDesignId || null) : null
         };
         delete formattedPartner.subscriptionExpiresAt;
+        const isUserA = m.userA.toString() === req.user.id;
+        const unreadCount = isUserA ? (m.unreadCount_userA || 0) : (m.unreadCount_userB || 0);
+
         return {
           id: m._id,
           matchedAt: m.matchedAt,
           conversationId: m.conversationId,
+          lastMessageAt: m.lastMessageAt,
+          unreadCount: unreadCount,
           partner: { ...formattedPartner, isOnline: presenceMap[partnerId.toString()] || false }
         };
       })
@@ -1091,7 +1081,7 @@ router.get('/matches', authRequired, async (req, res) => {
 // 5. BLOCKING
 // ------------------------------------------------------------------
 // POST /api/block/:targetId
-router.post('/block/:targetId', authRequired, async (req, res) => {
+router.post('/block/:targetId', verifiedAuthRequired, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.targetId)) {
       return res.status(400).json({ error: 'Invalid target user ID format' });
@@ -1137,7 +1127,7 @@ router.post('/block/:targetId', authRequired, async (req, res) => {
 });
 
 // DELETE /api/block/:targetId
-router.delete('/block/:targetId', authRequired, async (req, res) => {
+router.delete('/block/:targetId', verifiedAuthRequired, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.targetId)) {
       return res.status(400).json({ error: 'Invalid target user ID format' });
@@ -1158,7 +1148,7 @@ router.delete('/block/:targetId', authRequired, async (req, res) => {
 // 6. REPORTING
 // ------------------------------------------------------------------
 // POST /api/report
-router.post('/report', authRequired, async (req, res) => {
+router.post('/report', verifiedAuthRequired, async (req, res) => {
   try {
     const reporterId = new mongoose.Types.ObjectId(req.user.id);
     const { targetUserId, targetPostId, reason } = req.body || {};
@@ -1230,7 +1220,7 @@ function countWords(str) {
 }
 
 // POST /api/posts (Publish message with tier quota, word limit check, and anonymity toggle)
-router.post('/posts', authRequired, async (req, res) => {
+router.post('/posts', verifiedAuthRequired, async (req, res) => {
   const lockKey = `post_lock:${req.user.id}`;
   let lockAcquired = false;
   try {
@@ -1352,7 +1342,7 @@ router.post('/posts', authRequired, async (req, res) => {
 });
 
 // GET /api/posts (Fetch anonymous feed with upvote/downvote counts, user vote status, and optional author identity)
-router.get('/posts', authRequired, async (req, res) => {
+router.get('/posts', verifiedAuthRequired, async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
@@ -1427,7 +1417,7 @@ router.get('/posts', authRequired, async (req, res) => {
 });
 
 // POST /api/posts/:postId/upvote (Toggle / set upvote on a post atomically)
-router.post('/posts/:postId/upvote', authRequired, async (req, res) => {
+router.post('/posts/:postId/upvote', verifiedAuthRequired, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.postId)) {
       return res.status(400).json({ error: 'Invalid post ID format' });
@@ -1571,7 +1561,7 @@ router.post('/posts/:postId/upvote', authRequired, async (req, res) => {
 });
 
 // POST /api/posts/:postId/downvote (Toggle / set downvote on a post atomically)
-router.post('/posts/:postId/downvote', authRequired, async (req, res) => {
+router.post('/posts/:postId/downvote', verifiedAuthRequired, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.postId)) {
       return res.status(400).json({ error: 'Invalid post ID format' });
@@ -1669,7 +1659,7 @@ router.post('/feedback', authRequired, async (req, res) => {
 });
 
 // GET /api/conversations/:conversationId/messages (Chat History)
-router.get('/conversations/:conversationId/messages', authRequired, async (req, res) => {
+router.get('/conversations/:conversationId/messages', verifiedAuthRequired, async (req, res) => {
   try {
     const { conversationId } = req.params;
     const userId = req.user.id;
@@ -1682,6 +1672,20 @@ router.get('/conversations/:conversationId/messages', authRequired, async (req, 
 
     if (match.userA.toString() !== userId && match.userB.toString() !== userId) {
       return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Block check
+    const partnerId = match.userA.toString() === userId ? match.userB : match.userA;
+    const Block = require('../models/Block');
+    const blockExists = await Block.findOne({
+      $or: [
+        { blockerId: userId, blockedId: partnerId },
+        { blockerId: partnerId, blockedId: userId }
+      ]
+    }).lean();
+
+    if (blockExists) {
+      return res.status(403).json({ error: 'Access denied due to block' });
     }
 
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -1702,6 +1706,83 @@ router.get('/conversations/:conversationId/messages', authRequired, async (req, 
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error fetching messages' });
+  }
+});
+
+// POST /api/conversations/:conversationId/messages (HTTP Fallback for sending messages)
+router.post('/conversations/:conversationId/messages', verifiedAuthRequired, async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { ciphertext, iv, clientMessageId } = req.body;
+    const userId = req.user.id;
+
+    if (!ciphertext || !iv) {
+      return res.status(400).json({ error: 'Missing ciphertext or iv' });
+    }
+
+    const match = await Match.findOne({ conversationId });
+    if (!match) return res.status(404).json({ error: 'Conversation not found' });
+    if (match.userA.toString() !== userId && match.userB.toString() !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Block check
+    const partnerId = match.userA.toString() === userId ? match.userB : match.userA;
+    const Block = require('../models/Block');
+    const blockExists = await Block.findOne({
+      $or: [
+        { blockerId: userId, blockedId: partnerId },
+        { blockerId: partnerId, blockedId: userId }
+      ]
+    }).lean();
+
+    if (blockExists) return res.status(403).json({ error: 'Access denied due to block' });
+
+    const Message = require('../models/Message');
+    const now = new Date();
+    let messageDoc;
+    
+    if (clientMessageId && typeof clientMessageId === 'string') {
+      messageDoc = await Message.findOneAndUpdate(
+        { senderId: userId, clientMessageId: clientMessageId },
+        {
+          $setOnInsert: {
+            conversationId,
+            senderId: userId,
+            clientMessageId,
+            ciphertext,
+            iv,
+            timestamp: now,
+            delivered: false
+          }
+        },
+        { upsert: true, new: true }
+      );
+    } else {
+      messageDoc = await Message.create({
+        conversationId,
+        senderId: userId,
+        ciphertext,
+        iv,
+        timestamp: now,
+        delivered: false
+      });
+    }
+
+    // Update Match metadata
+    const isUserA = match.userA.toString() === userId;
+    const updateData = { lastMessageAt: now };
+    if (isUserA) {
+      updateData.$inc = { unreadCount_userB: 1 };
+    } else {
+      updateData.$inc = { unreadCount_userA: 1 };
+    }
+    await Match.updateOne({ conversationId }, updateData);
+
+    res.status(201).json({ message: messageDoc });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error sending message via HTTP' });
   }
 });
 
