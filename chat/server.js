@@ -286,23 +286,38 @@ io.on('connection', async (socket) => {
       if (admin.apps.length > 0) {
         const recipientId = match.userA.toString() === userId ? match.userB.toString() : match.userA.toString();
         
-        // Fetch sender and recipient profiles in parallel using lean() for lower memory and latency
+        // Fetch sender and recipient profiles, plus count unread messages in parallel
         Promise.all([
           User.findById(recipientId).select('name fcmTokens').lean(),
-          User.findById(userId).select('name').lean()
-        ]).then(([recipient, sender]) => {
+          User.findById(userId).select('name').lean(),
+          Message.countDocuments({ conversationId: conversationId.toString(), senderId: userId, delivered: false })
+        ]).then(([recipient, sender, unreadCount]) => {
           if (recipient && recipient.fcmTokens && recipient.fcmTokens.length > 0) {
             const tokens = recipient.fcmTokens;
+            
+            // To account for the current message that is in the batch queue and might not be counted yet
+            const totalUnread = unreadCount + 1;
+            const senderName = sender?.name || 'someone';
+            
+            const title = totalUnread > 1 
+              ? `${senderName} — ${totalUnread} messages` 
+              : `${senderName}`;
+              
+            const body = totalUnread > 1 
+              ? `You have ${totalUnread} new messages.` 
+              : 'You have a new message.';
+
             admin.messaging().sendEachForMulticast({
               tokens,
               notification: {
-                title: `New message from ${sender?.name || 'someone'}`,
-                body: 'You have a new message.'
+                title: title,
+                body: body
               },
               android: {
                 notification: {
-                  channelId: 'campusmatch_channel_id',
-                  priority: 'high'
+                  channelId: 'chat_messages_channel',
+                  priority: 'high',
+                  tag: `chat_${conversationId.toString()}`
                 }
               },
               data: {
@@ -338,6 +353,31 @@ io.on('connection', async (socket) => {
     } catch (err) {
       console.error('[CHAT] Error sending message:', err);
       socket.emit('chat_error', { error: 'Failed to process message' });
+    }
+  });
+
+  // Handle marking messages as read
+  socket.on('mark_read', async (data) => {
+    try {
+      if (!data || typeof data !== 'object') return;
+      const { conversationId } = data;
+      if (!conversationId) return;
+
+      // Update all unread messages in this conversation where sender is NOT the current user
+      await Message.updateMany(
+        { conversationId, senderId: { $ne: userId }, delivered: false },
+        { $set: { delivered: true } }
+      );
+      
+      // Update the messageQueue if there are pending inserts
+      messageQueue.forEach(msg => {
+        if (msg.conversationId === conversationId && msg.senderId !== userId) {
+          msg.delivered = true;
+        }
+      });
+      
+    } catch (err) {
+      console.error('[CHAT] Error marking messages read:', err.message);
     }
   });
 
