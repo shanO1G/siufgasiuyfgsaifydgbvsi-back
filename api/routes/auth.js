@@ -1132,4 +1132,71 @@ router.delete('/account', authRequired, async (req, res) => {
   }
 });
 
+// GET /api/auth/delete-account-request (HTML Form for Google Play Console)
+router.get('/delete-account-request', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>FRNDbuzz - Account Deletion Request</title>
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; line-height: 1.6; }
+        h2 { color: #333; }
+        .container { border: 1px solid #ddd; padding: 20px; border-radius: 8px; background: #f9f9f9; }
+        input[type="email"], textarea { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        textarea { resize: vertical; height: 100px; }
+        button { background-color: #d9534f; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px;}
+        button:hover { background-color: #c9302c; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h2>FRNDbuzz Account Deletion</h2>
+        <p>Use this form to request the permanent deletion of your FRNDbuzz account. Upon submission, your account and all associated personal data (profile, messages, matches, etc.) will be deleted within 7 days.</p>
+        <form action="/api/auth/delete-account-request" method="POST">
+          <label for="email"><strong>Registered Email Address:</strong></label>
+          <input type="email" id="email" name="email" placeholder="Enter your email" required>
+          
+          <label for="reason"><strong>Reason for deletion (Optional):</strong></label>
+          <textarea id="reason" name="reason" placeholder="Tell us why you're leaving..."></textarea>
+          
+          <button type="submit">Submit Deletion Request</button>
+        </form>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
+// POST /api/auth/delete-account-request (Handle HTML Form Submission)
+router.post('/delete-account-request', require('express').urlencoded({ extended: true }), (req, res) => {
+  const email = req.body.email;
+  const reason = req.body.reason || 'No reason provided';
+  // Here you can add logic to save the request to the database or send an admin email.
+  console.log(`[AUTH] Account deletion requested for email: ${email} | Reason: ${reason}`);
+  
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Request Received</title>
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; text-align: center; line-height: 1.6;}
+        .success { color: #5cb85c; font-size: 64px; margin-bottom: 10px; }
+      </style>
+    </head>
+    <body>
+      <div class="success">&#10003;</div>
+      <h2>Request Received</h2>
+      <p>Your account deletion request for <strong>${email}</strong> has been successfully received.</p>
+      <p>We will process this request and permanently delete your data within 7 days.</p>
+    </body>
+    </html>
+  `);
+});
+
 module.exports = router;
